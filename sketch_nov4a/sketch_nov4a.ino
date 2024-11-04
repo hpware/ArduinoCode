@@ -5,15 +5,26 @@
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 
-
 void setup() {
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor();
+  initDisplay();
+  delay(2000);
 }
 
 void loop() {
+  
+}
 
+void initDisplay() {
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  int16_t x1, y1, x2, y2;
+  uint16_t w, h;
+  display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (128 - w) / 2;
+  int16_t y = (64 - h) / 2;
+  display.setCursor(x, y);
+  display.println(text);
+  display.display();
 }
