@@ -19,12 +19,14 @@ void initDisplay() {
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(WHITE);
-  int16_t x1, y1, x2, y2;
+  int16_t x1, y1;
   uint16_t w, h;
-  display.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("XXXXX", 0, 0, &x1, &y1, &w, &h);
   int16_t x = (128 - w) / 2;
   int16_t y = (64 - h) / 2;
   display.setCursor(x, y);
-  display.println(text);
+  display.println("CYIVS");
+  display.setCursor(x + 5, y + 15);
+  display.println("C2XX");
   display.display();
 }
