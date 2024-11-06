@@ -9,9 +9,17 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 // Menu
 int Current_Menu = 1;
 int Current_Choice = 1;
+int Forward_Menu = 0;
 // Btn1
 const int buttonPin1 = 2;
 int button1State = 0;
+//Button2
+const int buttonPin2 = 4;
+int button2State = 0;
+// Btn3
+const int buttonPin3 = 7;
+int button3State = 0;
+
 
 void setup() {
   Serial.begin(9600);
@@ -53,26 +61,56 @@ void initDisplay() {
 // Buttons 
 void btnload() {
   btn1();
+  btn2();
+  btn3();
+  delay(50);
 }
 
 void btnif() {
   if (button1State == 1) {
-    if (Current_Choice == 4) {
+    if (Current_Choice == 4 && Current_Menu == 1) {
+      Current_Choice = 1;
+    } else if (Current_Choice == 6 && Current_Menu == 5) {
       Current_Choice = 1;
     } else {
         Current_Choice++;
     }
     MenuDash();
-  } else {
-
+  } if (button2State == 1) {
+    Current_Choice = 1;
+    if (Current_Menu == 0) {
+    } else {
+        if (Current_Menu < 10) {
+            Current_Menu = 1;
+        } 
+    }
+    MenuDash();
+  } if  (button3State == 1) {
+    Current_Choice = 1;
+    if (Forward_Menu == 1) {
+      Current_Menu = 2;
+    } else if (Forward_Menu == 2) {
+      Current_Menu = 3;
+    } else if (Forward_Menu == 3) {
+      Current_Menu = 4;
+    } else if (Forward_Menu == 4) {
+      Current_Menu = 5;
+    }
+    MenuDash();
   }
 }
 
 void btn1() {
   button1State = digitalRead(buttonPin1);
-  delay(50);
 }
 
+void btn2() {
+  button2State = digitalRead(buttonPin2);
+}
+
+void btn3() {
+  button3State = digitalRead(buttonPin3);
+}
 // Debug 
 
 void debug() {
@@ -112,6 +150,7 @@ void initMenu() {
     display.setCursor(x, 0);
     display.println("Menu");
     if (Current_Choice == 1) {
+    Forward_Menu = 1;
     display.setCursor(0, 15);
     display.println("> TIME");
     display.setCursor(0, 30);
@@ -121,6 +160,7 @@ void initMenu() {
     display.setCursor(70, 45);
     display.println("LIGHT");
     } else if (Current_Choice == 2) {
+    Forward_Menu = 2;
     display.setCursor(0, 15);
     display.println("TIME");
     display.setCursor(0, 30);
@@ -130,6 +170,7 @@ void initMenu() {
     display.setCursor(70, 45);
     display.println("LIGHT");
     } else if (Current_Choice == 3) {
+    Forward_Menu = 3;
     display.setCursor(0, 15);
     display.println("TIME");
     display.setCursor(0, 30);
@@ -139,6 +180,7 @@ void initMenu() {
     display.setCursor(70, 45);
     display.println("LIGHT");
     } else if (Current_Choice == 4) {
+    Forward_Menu = 4;
     display.setCursor(0, 15);
     display.println("TIME");
     display.setCursor(0, 30);
@@ -163,6 +205,33 @@ void timeMenu() {
   if (Current_Choice == 1) {
     display.setCursor(0, 15);
     display.println("> Set Time");
+    display.setCursor(0, 30);
+    display.println("Get Time");
+    display.setCursor(0, 45);
+    display.println("Set Time");
+    display.setCursor(70, 45);
+    display.println("Set Time");
+  } else if (Current_Choice == 2) {
+    display.setCursor(0, 15);
+    display.println("> Set Time");
+    display.setCursor(0, 30);
+    display.println("Get Time");
+    display.setCursor(0, 45);
+    display.println("Set Time");
+    display.setCursor(70, 45);
+    display.println("Set Time");
+  } else if (Current_Choice == 3) {
+    display.setCursor(0, 15);
+    display.println("> Set Time");
+    display.setCursor(0, 30);
+    display.println("Get Time");
+    display.setCursor(0, 45);
+    display.println("Set Time");
+    display.setCursor(70, 45);
+    display.println("Set Time");
+  } else if (Current_Choice == 4) {
+    display.setCursor(0, 15);
+    display.println("Set Time");
     display.setCursor(0, 30);
     display.println("Get Time");
     display.setCursor(0, 45);
@@ -226,15 +295,84 @@ void LightMenu() {
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("Light");
-  if (Current_Choice = 1) {
+  if (Current_Choice == 1) {
     display.setCursor(0, 15);
-    display.println("> On");
+    display.println("> L1");
+    display.setCursor(25, 15);
+    display.println("  L2");
+    display.setCursor(50, 15);
+    display.println("  L3");
     display.setCursor(0, 30);
-    display.println("Off");
-    display.setCursor(0, 45);
-    display.println("Toggle");
-    display.setCursor(70, 45);
-    display.println("On");
+    display.println("  L4");
+    display.setCursor(25, 30);
+    display.println("  L5");
+    display.setCursor(50, 30);
+    display.println("  L6");
+  } else if (Current_Choice == 2) {
+    display.setCursor(0, 15);
+    display.println("  L1");
+    display.setCursor(25, 15);
+    display.println("> L2");
+    display.setCursor(50, 15);
+    display.println("  L3");
+    display.setCursor(0, 30);
+    display.println("  L4");
+    display.setCursor(25, 30);
+    display.println("  L5");
+    display.setCursor(50, 30);
+    display.println("  L6");
+  } else if (Current_Choice == 3) {
+    display.setCursor(0, 15);
+    display.println("  L1");
+    display.setCursor(25, 15);
+    display.println("  L2");
+    display.setCursor(50, 15);
+    display.println("> L3");
+    display.setCursor(0, 30);
+    display.println("  L4");
+    display.setCursor(25, 30);
+    display.println("  L5");
+    display.setCursor(50, 30);
+    display.println("  L6");
+  } else if (Current_Choice == 4) {
+    display.setCursor(0, 15);
+    display.println("  L1");
+    display.setCursor(25, 15);
+    display.println("  L2");
+    display.setCursor(50, 15);
+    display.println("  L3");
+    display.setCursor(0, 30);
+    display.println("> L4");
+    display.setCursor(25, 30);
+    display.println("  L5");
+    display.setCursor(50, 30);
+    display.println("  L6");
+  } else if (Current_Choice == 5) {
+    display.setCursor(0, 15);
+    display.println("  L1");
+    display.setCursor(25, 15);
+    display.println("  L2");
+    display.setCursor(50, 15);
+    display.println("  L3");
+    display.setCursor(0, 30);
+    display.println("  L4");
+    display.setCursor(25, 30);
+    display.println("> L5");
+    display.setCursor(50, 30);
+    display.println("  L6");
+  } else if (Current_Choice == 6) {
+    display.setCursor(0, 15);
+    display.println("  L1");
+    display.setCursor(25, 15);
+    display.println("  L2");
+    display.setCursor(50, 15);
+    display.println("  L3");
+    display.setCursor(0, 30);
+    display.println("  L4");
+    display.setCursor(25, 30);
+    display.println("  L5");
+    display.setCursor(50, 30);
+    display.println("> L6");
   }
   display.display();
 }
