@@ -12,9 +12,6 @@ int Current_Choice = 1;
 // Btn1
 const int buttonPin1 = 2;
 int button1State = 0;
-// Btn2
-const int buttonPin2 = 4;
-int button2State = 0;
 
 void setup() {
   Serial.begin(9600);
@@ -56,46 +53,30 @@ void initDisplay() {
 // Buttons 
 void btnload() {
   btn1();
-  btn2();
 }
 
 void btnif() {
-  if (button1State == HIGH) {
-    Serial.println("I " + button1State);
-    if (Current_Choice = 4) {
+  if (button1State == 1) {
+    if (Current_Choice == 4) {
       Current_Choice = 1;
     } else {
-        Current_Choice = Current_Choice + 1;
+        Current_Choice++;
     }
     MenuDash();
-  } else if (button2State = HIGH) {
-    Serial.println(button2State);
-    if (Current_Choice = 1) {
-      Current_Choice = 4;
-    } else {
-        Current_Choice = Current_Choice - 1;
-    }
-        MenuDash();
+  } else {
+
   }
 }
 
 void btn1() {
   button1State = digitalRead(buttonPin1);
-}
-
-void btn2() {
-  button2State = digitalRead(buttonPin2);
+  delay(50);
 }
 
 // Debug 
 
 void debug() {
-  if (getmsg() = "NEXT") {
-    Current_Menu = Current_Menu + 1;
-    Serial.write(Current_Menu);
-    Serial.write("NEXT");
-    MenuDash();
-  }
+
 }
 
 String getmsg() {
@@ -106,9 +87,9 @@ String getmsg() {
 // Menu Dash
 void MenuDash() {
   display.clearDisplay();
-  if (Current_Menu = 1) {
+  if (Current_Menu == 1) {
     initMenu(); 
-  } else if (Current_Menu = 2) {
+  } else if (Current_Menu == 2) {
     timeMenu();
   } else if (Current_Menu == 3) {
     BLEMenu();
@@ -130,7 +111,7 @@ void initMenu() {
     int16_t x = (128 - w) / 2;
     display.setCursor(x, 0);
     display.println("Menu");
-    if (Current_Choice = 1) {
+    if (Current_Choice == 1) {
     display.setCursor(0, 15);
     display.println("> TIME");
     display.setCursor(0, 30);
@@ -139,16 +120,16 @@ void initMenu() {
     display.println("EEPROM");
     display.setCursor(70, 45);
     display.println("LIGHT");
-    } else if (Current_Choice = 2) {
+    } else if (Current_Choice == 2) {
     display.setCursor(0, 15);
-    display.println("> TIME");
+    display.println("TIME");
     display.setCursor(0, 30);
     display.println("> BLE");
     display.setCursor(0, 45);
     display.println("EEPROM");
     display.setCursor(70, 45);
     display.println("LIGHT");
-    } else if (Current_Choice = 3) {
+    } else if (Current_Choice == 3) {
     display.setCursor(0, 15);
     display.println("TIME");
     display.setCursor(0, 30);
@@ -157,7 +138,7 @@ void initMenu() {
     display.println("> EEPROM");
     display.setCursor(70, 45);
     display.println("LIGHT");
-    } else if (Current_Choice = 4) {
+    } else if (Current_Choice == 4) {
     display.setCursor(0, 15);
     display.println("TIME");
     display.setCursor(0, 30);
@@ -179,7 +160,7 @@ void timeMenu() {
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("Time");
-  if (Current_Choice = 1) {
+  if (Current_Choice == 1) {
     display.setCursor(0, 15);
     display.println("> Set Time");
     display.setCursor(0, 30);
