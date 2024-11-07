@@ -20,6 +20,10 @@ int button2State = 0;
 const int buttonPin3 = 7;
 int button3State = 0;
 
+// Btn4
+const int buttonPin4 = 8;
+int button4State = 0;
+
 
 void setup() {
   Serial.begin(9600);
@@ -34,6 +38,7 @@ void setup() {
 void loop() {
   btnload();
   btnif();
+  Serial.println(button4State);
   debug();
 }
 
@@ -85,7 +90,7 @@ void btnif() {
         } 
     }
     MenuDash();
-  } if  (button3State == 1) {
+  } if (button4State == 1) {
     Current_Choice = 1;
     if (Forward_Menu == 1) {
       Current_Menu = 2;
@@ -111,7 +116,11 @@ void btn2() {
 void btn3() {
   button3State = digitalRead(buttonPin3);
 }
-// Debug 
+
+void btn4() {
+  button4State = digitalRead(buttonPin4);
+}
+// Debug
 
 void debug() {
 
