@@ -27,6 +27,7 @@ int button4State = 0;
 
 void setup() {
   Serial.begin(9600);
+  Serial.println("Setting Up...");
   initDisplay();
   display.clearDisplay();
   display.setTextSize(1);
@@ -38,14 +39,13 @@ void setup() {
 void loop() {
   btnload();
   btnif();
-  Serial.println(button4State);
-  debug();
 }
 
 // Start Popup Load
 void initDisplay() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   display.clearDisplay();
+  
   display.setTextColor(WHITE);
   display.setTextSize(2);
   int16_t x1, y1;
@@ -68,15 +68,14 @@ void btnload() {
   btn1();
   btn2();
   btn3();
+  btn4();
   delay(50);
 }
 
 void btnif() {
   if (button1State == 1) {
-    if (Current_Choice == 4 && Current_Menu == 1) {
-      Current_Choice = 1;
-    } else if (Current_Choice == 6 && Current_Menu == 5) {
-      Current_Choice = 1;
+    if (Current_Choice == 4 && Current_Menu == 1 || Current_Choice == 6 && Current_Menu == 5) {
+      
     } else {
         Current_Choice++;
     }
@@ -88,6 +87,13 @@ void btnif() {
         if (Current_Menu < 10) {
             Current_Menu = 1;
         } 
+    }
+    MenuDash();
+  } if (button3State == 1) {
+    if (Current_Choice == 1) {
+      
+    } else {
+        Current_Choice--;
     }
     MenuDash();
   } if (button4State == 1) {
@@ -120,11 +126,7 @@ void btn3() {
 void btn4() {
   button4State = digitalRead(buttonPin4);
 }
-// Debug
 
-void debug() {
-
-}
 
 String getmsg() {
   while(!Serial.available());
@@ -256,7 +258,7 @@ void BLEMenu() {
   display.clearDisplay();
   int16_t x1, y1;
   uint16_t w, h;
-  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("XXX", 0, 0, &x1, &y1, &w, &h);
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("BLE");
@@ -290,7 +292,7 @@ void EEPROMMenu() {
   display.clearDisplay();
   int16_t x1, y1;
   uint16_t w, h;
-  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  display.getTextBounds("XXXXXX", 0, 0, &x1, &y1, &w, &h);
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("EEPROM");
