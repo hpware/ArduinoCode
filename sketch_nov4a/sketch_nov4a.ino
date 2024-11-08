@@ -331,6 +331,7 @@ void EEPROMMenu() {
     display.println("Erase");
     display.setCursor(70, 45);
     display.println("> Read");  
+  }
   display.display();
 }
 
