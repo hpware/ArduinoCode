@@ -10,7 +10,6 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1);
 int Current_Menu = 1;
 int Current_Choice = 1;
 int Forward_Menu = 0;
-int LightMenu = 1;
 // Btn1
 const int buttonPin1 = 2;
 int button1State = 0;
@@ -22,7 +21,7 @@ const int buttonPin3 = 7;
 int button3State = 0;
 
 // Btn4
-const int buttonPin4 = 8;
+const int buttonPin4 = 3;
 int button4State = 0;
 
 
@@ -263,13 +262,25 @@ void BLEMenu() {
   display.println("BLE");
   if (Current_Choice = 1) {
     display.setCursor(0, 15);
-    display.println("> Scan");
+    display.println("> Connect");
     display.setCursor(0, 30);
-    display.println("Connect");
+    display.println("Change Time");
     display.setCursor(0, 45);
-    display.println("Disconnect");
-    display.setCursor(70, 45);
-    display.println("Scan");
+    display.println("Change EEPROM");
+  } else if (Current_Choice == 2) {
+    display.setCursor(0, 15);
+    display.println("Connect");
+    display.setCursor(0, 30);
+    display.println("> Change Time");
+    display.setCursor(0, 45);
+    display.println("Change EEPROM");
+  } else if (Current_Choice == 3) { 
+    display.setCursor(0, 15);
+    display.println("Connect");
+    display.setCursor(0, 30);
+    display.println("Change Time");
+    display.setCursor(0, 45);
+    display.println("> Change EEPROM");
   }
   display.display();
 }
@@ -306,7 +317,6 @@ void LightMenu() {
   display.setCursor(x, 0);
   display.println("Light");
   if (Current_Choice == 1) {
-    lightMenu = 1;
     display.setCursor(0, 15);
     display.println("> L1");
     display.setCursor(25, 15);
@@ -320,7 +330,6 @@ void LightMenu() {
     display.setCursor(50, 30);
     display.println("  L6");
   } else if (Current_Choice == 2) {
-    lightMenu = 2;
     display.setCursor(0, 15);
     display.println("  L1");
     display.setCursor(25, 15);
@@ -334,7 +343,6 @@ void LightMenu() {
     display.setCursor(50, 30);
     display.println("  L6");
   } else if (Current_Choice == 3) {
-    lightMenu = 3;
     display.setCursor(0, 15);
     display.println("  L1");
     display.setCursor(25, 15);
@@ -348,7 +356,6 @@ void LightMenu() {
     display.setCursor(50, 30);
     display.println("  L6");
   } else if (Current_Choice == 4) {
-    lightMenu = 4;
     display.setCursor(0, 15);
     display.println("  L1");
     display.setCursor(25, 15);
@@ -362,7 +369,6 @@ void LightMenu() {
     display.setCursor(50, 30);
     display.println("  L6");
   } else if (Current_Choice == 5) {
-    lightMenu = 5;
     display.setCursor(0, 15);
     display.println("  L1");
     display.setCursor(25, 15);
@@ -376,7 +382,6 @@ void LightMenu() {
     display.setCursor(50, 30);
     display.println("  L6");
   } else if (Current_Choice == 6) {
-    lightMenu = 6;
     display.setCursor(0, 15);
     display.println("  L1");
     display.setCursor(25, 15);
@@ -391,11 +396,6 @@ void LightMenu() {
     display.println("> L6");
   }
   display.display();
-  lightMenuCode();
-}
 
-void lightMenuCode() {
-  if (lightMenu == 1) {
     
   }
-}
