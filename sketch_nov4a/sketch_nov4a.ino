@@ -69,26 +69,25 @@ void btnload() {
   btn2();
   btn3();
   btn4();
-  delay(50);
+  delay(100);
 }
 
 void btnif() {
   if (button1State == 1) {
-    if (Current_Choice == 4 && Current_Menu == 1 || Current_Choice == 6 && Current_Menu == 5) {
+    if (Current_Choice == 4 && Current_Menu == 1 || Current_Choice == 6 && Current_Menu == 5 || Current_Choice == 3 && Current_Menu == 3 || Current_Choice == 4 && Current_Menu == 2) {
       
     } else {
         Current_Choice++;
     }
     MenuDash();
   } if (button2State == 1) {
+    if (Current_Menu != 1) {
     Current_Choice = 1;
-    if (Current_Menu == 0) {
-    } else {
         if (Current_Menu < 10) {
             Current_Menu = 1;
         } 
-    }
     MenuDash();
+    }
   } if (button3State == 1) {
     if (Current_Choice == 1) {
       
@@ -224,20 +223,20 @@ void timeMenu() {
     display.println("Set Time");
   } else if (Current_Choice == 2) {
     display.setCursor(0, 15);
-    display.println("> Set Time");
+    display.println("Set Time");
     display.setCursor(0, 30);
-    display.println("Get Time");
+    display.println("> Get Time");
     display.setCursor(0, 45);
     display.println("Set Time");
     display.setCursor(70, 45);
     display.println("Set Time");
   } else if (Current_Choice == 3) {
     display.setCursor(0, 15);
-    display.println("> Set Time");
+    display.println("Set Time");
     display.setCursor(0, 30);
     display.println("Get Time");
     display.setCursor(0, 45);
-    display.println("Set Time");
+    display.println("> Set Time");
     display.setCursor(70, 45);
     display.println("Set Time");
   } else if (Current_Choice == 4) {
@@ -248,7 +247,7 @@ void timeMenu() {
     display.setCursor(0, 45);
     display.println("Set Time");
     display.setCursor(70, 45);
-    display.println("Set Time");
+    display.println("> Set Time");
   }
   display.display();
 }
@@ -262,7 +261,7 @@ void BLEMenu() {
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("BLE");
-  if (Current_Choice = 1) {
+  if (Current_Choice == 1) {
     display.setCursor(0, 15);
     display.println("> Connect");
     display.setCursor(0, 30);
@@ -296,7 +295,7 @@ void EEPROMMenu() {
   int16_t x = (128 - w) / 2;
   display.setCursor(x, 0);
   display.println("EEPROM");
-  if (Current_Choice = 1) {
+  if (Current_Choice == 1) {
     display.setCursor(0, 15);
     display.println("> Read");
     display.setCursor(0, 30);
@@ -305,7 +304,33 @@ void EEPROMMenu() {
     display.println("Erase");
     display.setCursor(70, 45);
     display.println("Read");
-  }
+  } else if (Current_Choice == 2) {
+    display.setCursor(0, 15);
+    display.println("Read");
+    display.setCursor(0, 30);
+    display.println("> Write");
+    display.setCursor(0, 45);
+    display.println("Erase");
+    display.setCursor(70, 45);
+    display.println("Read");
+  } else if (Current_Choice == 3) {
+    display.setCursor(0, 15);
+    display.println("Read");
+    display.setCursor(0, 30);
+    display.println("Write");
+    display.setCursor(0, 45);
+    display.println("> Erase");
+    display.setCursor(70, 45);
+    display.println("Read");
+  } else if (Current_Choice == 4) {
+    display.setCursor(0, 15);
+    display.println("Read");
+    display.setCursor(0, 30);
+    display.println("Write");
+    display.setCursor(0, 45);
+    display.println("Erase");
+    display.setCursor(70, 45);
+    display.println("> Read");  
   display.display();
 }
 
