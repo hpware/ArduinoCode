@@ -1,28 +1,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-
-// Int
-Adafruit_SSD1306 display(128, 64, &Wire, -1);
-
-
-// Menu
-int Current_Menu = 1;
-int Current_Choice = 1;
-int Forward_Menu = 0;
-// Btn1
-const int buttonPin1 = 2;
-int button1State = 0;
-//Button2
-const int buttonPin2 = 4;
-int button2State = 0;
-// Btn3
-const int buttonPin3 = 7;
-int button3State = 0;
-
-// Btn4
-const int buttonPin4 = 3;
-int button4State = 0;
+#include "values.h"
 
 
 void setup() {
@@ -73,30 +52,35 @@ void btnload() {
 }
 
 void btnif() {
-  if (button1State == 1) {
+  if (NextButtonState == 1) {
     if (Current_Choice == 4 && Current_Menu == 1 || Current_Choice == 6 && Current_Menu == 5 || Current_Choice == 3 && Current_Menu == 3 || Current_Choice == 4 && Current_Menu == 2) {
       
     } else {
         Current_Choice++;
     }
     MenuDash();
-  } if (button2State == 1) {
+  } if (BackButtonState == 1) {
+    if (Current_Menu == 1) {
+      initMenu_Choice = Current_Choice;
+    }
     if (Current_Menu != 1) {
     Current_Choice = 1;
         if (Current_Menu < 10) {
             Current_Menu = 1;
-        } 
-    MenuDash();
+        } else if (20 > Current_Menu > 10) {
+            Current_Menu = 2;
+        }
+        MenuDash();
     }
-  } if (button3State == 1) {
+  } if (UnNextButtonState == 1) {
     if (Current_Choice == 1) {
-      
     } else {
         Current_Choice--;
     }
     MenuDash();
-  } if (button4State == 1) {
-    Current_Choice = 1;
+  } if (GoButtonState == 1) {
+      Current_Choice = 1;
+      // Init Menu
     if (Forward_Menu == 1) {
       Current_Menu = 2;
     } else if (Forward_Menu == 2) {
@@ -105,25 +89,34 @@ void btnif() {
       Current_Menu = 4;
     } else if (Forward_Menu == 4) {
       Current_Menu = 5;
+    } // TimeMenu
+    else if (Forward_Menu == 11) {
+      Current_Menu = 11;
+    } else if (Forward_Menu == 12) {
+      Current_Menu = 12;
+    } else if (Forward_Menu == 13) {
+      Current_Menu = 13;
+    } else if (Forward_Menu == 14) {
+      Current_Menu = 14;
     }
     MenuDash();
   }
 }
 
 void btn1() {
-  button1State = digitalRead(buttonPin1);
+  NextButtonState = digitalRead(buttonPin1);
 }
 
 void btn2() {
-  button2State = digitalRead(buttonPin2);
+  BackButtonState = digitalRead(buttonPin2);
 }
 
 void btn3() {
-  button3State = digitalRead(buttonPin3);
+  UnNextButtonState = digitalRead(buttonPin3);
 }
 
 void btn4() {
-  button4State = digitalRead(buttonPin4);
+  GoButtonState = digitalRead(buttonPin4);
 }
 
 
@@ -145,10 +138,19 @@ void MenuDash() {
     EEPROMMenu();
   } else if (Current_Menu == 5) {
     LightMenu();
+  } // Time SubMenu 
+  else if (Current_Menu == 11) {
+    timemenu11();
+  } else if (Current_Menu == 12) {
+    timemenu12();
+  } else if (Current_Menu == 13) {
+    timemenu13();
+  } else if (Current_Menu == 14) {
+    timemenu14();
   }
 }
 
-// Menu
+// Menus
 
 // Start Menu
 void initMenu() {
@@ -213,6 +215,7 @@ void timeMenu() {
   display.setCursor(x, 0);
   display.println("Time");
   if (Current_Choice == 1) {
+    Forward_Menu = 11;
     display.setCursor(0, 15);
     display.println("> Set Time");
     display.setCursor(0, 30);
@@ -222,6 +225,7 @@ void timeMenu() {
     display.setCursor(70, 45);
     display.println("Set Time");
   } else if (Current_Choice == 2) {
+    Forward_Menu = 12;
     display.setCursor(0, 15);
     display.println("Set Time");
     display.setCursor(0, 30);
@@ -231,6 +235,7 @@ void timeMenu() {
     display.setCursor(70, 45);
     display.println("Set Time");
   } else if (Current_Choice == 3) {
+    Forward_Menu = 13;
     display.setCursor(0, 15);
     display.println("Set Time");
     display.setCursor(0, 30);
@@ -240,6 +245,7 @@ void timeMenu() {
     display.setCursor(70, 45);
     display.println("Set Time");
   } else if (Current_Choice == 4) {
+    Forward_Menu = 14;
     display.setCursor(0, 15);
     display.println("Set Time");
     display.setCursor(0, 30);
@@ -249,6 +255,50 @@ void timeMenu() {
     display.setCursor(70, 45);
     display.println("> Set Time");
   }
+  display.display();
+}
+// SubMenus
+void timemenu11() {
+  display.clearDisplay();
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (128 - w) / 2;
+  display.setCursor(x, 0);
+  display.println("Time");
+  display.display();
+}
+
+void timemenu12() {
+  display.clearDisplay();
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (128 - w) / 2;
+  display.setCursor(x, 0);
+  display.println("Time");
+  display.display();
+}
+
+void timemenu13() {
+  display.clearDisplay();
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (128 - w) / 2;
+  display.setCursor(x, 0);
+  display.println("Time");
+  display.display();
+}
+
+void timemenu14() {
+  display.clearDisplay();
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds("XXXX", 0, 0, &x1, &y1, &w, &h);
+  int16_t x = (128 - w) / 2;
+  display.setCursor(x, 0);
+  display.println("Time");
   display.display();
 }
 
@@ -333,6 +383,7 @@ void EEPROMMenu() {
     display.println("> Read");  
   }
   display.display();
+
 }
 
 // Light Menu
