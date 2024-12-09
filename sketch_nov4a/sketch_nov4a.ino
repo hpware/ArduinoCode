@@ -24,7 +24,6 @@ void loop() {
 void initDisplay() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3D);
   display.clearDisplay();
-  Serial.println("Check");
   display.setTextColor(WHITE);
   display.setTextSize(2);
   int16_t x1, y1;
