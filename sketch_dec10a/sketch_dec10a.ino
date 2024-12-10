@@ -72,9 +72,10 @@ void init1() {
 }
 
 void loop() {
+  try {
   Vector rawAccel = mpu.readRawAccel();
   Vector normAccel = mpu.readNormalizeAccel();
-
+  Serial.println("h");
   Serial.print(rawAccel.XAxis);
   Serial.print("   ");
   Serial.print(rawAccel.YAxis);
@@ -88,5 +89,8 @@ void loop() {
   Serial.print("      ");  
   Serial.println(normAccel.ZAxis);
   
-  delay(1000);
+  delay(10);
+ } catch (__exception) {
+    Serial.println("error");
+  }
 }
