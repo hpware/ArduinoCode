@@ -7,7 +7,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Setting Up MPU\n");
   while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G)){
-    Serial.println("Oops! Check your connections! \n");
+    Serial.println("Oops! Check your connections!");
     delay(1000);
   } 
   init1();
@@ -57,12 +57,15 @@ void init1() {
       Serial.println("+/- 2 g");
       break;
   }  
-  //Serial.print(" * Accelerometer offsets: ");
-  //Serial.print(mpu.getAccelOffsetX());
-  //Serial.print(" / ");
-  //Serial.print(mpu.getAccelOffsetY());
-  //Serial.print(" / ");
-  //Serial.println(mpu.getAccelOffsetZ());
+  mpu.setAccelOffsetX(0);
+  mpu.setAccelOffsetY(0);
+  mpu.setAccelOffsetZ(0);
+  Serial.print(" * Accelerometer offsets: ");
+  Serial.print(mpu.getAccelOffsetX());
+  Serial.print(" / ");
+  Serial.print(mpu.getAccelOffsetY());
+  Serial.print(" / ");
+  Serial.println(mpu.getAccelOffsetZ());
   
   Serial.println();
   Serial.println("       Accelarometer                      Gyrometer           ");
@@ -72,25 +75,22 @@ void init1() {
 }
 
 void loop() {
-  try {
-  Vector rawAccel = mpu.readRawAccel();
-  Vector normAccel = mpu.readNormalizeAccel();
-  Serial.println("h");
-  Serial.print(rawAccel.XAxis);
+  
+  endgame();
+}
+void endgame() {
+  Serial.print(mpu.readRawAccel().XAxis);
   Serial.print("   ");
-  Serial.print(rawAccel.YAxis);
+  Serial.print(mpu.readRawAccel().YAxis);
   Serial.print("   ");
-  Serial.print(rawAccel.ZAxis);
+  Serial.print(mpu.readRawAccel().ZAxis);
   Serial.print("     ");
 
-  Serial.print(normAccel.XAxis);
+  Serial.print(mpu.readNormalizeAccel().XAxis);
   Serial.print("     ");  
-  Serial.print(normAccel.YAxis);
+  Serial.print(mpu.readNormalizeAccel().YAxis);
   Serial.print("      ");  
-  Serial.println(normAccel.ZAxis);
+  Serial.println(mpu.readNormalizeAccel().ZAxis);
   
-  delay(10);
- } catch (__exception) {
-    Serial.println("error");
-  }
+  delay(1000);
 }
