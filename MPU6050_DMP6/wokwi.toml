@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+firmware = 'build/arduino.avr.uno/MPU6050_DMP6.ino.hex'
+elf = 'build/arduino.avr.uno/MPU6050_DMP6.ino.elf'
+rfc2217ServerPort = 4000
