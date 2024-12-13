@@ -1,6 +1,4 @@
-#include "<RM-MPU-6050-lib>/src/mpu.h";
-
-
+#include "MPU.h"
 void setup() {
   MPU_init(I2C_TypeDef *I2Cx, uint8_t mpu_address);
   Serial.begin(9600);
