@@ -2,14 +2,15 @@
 #include <NetworkClient.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
-#include "json.h"
 
 const char *ssid = "ESPTek";
 const char *password = "6543KJVpf";
 
 WebServer server(80);
 
-const int BLOCK_ITM = 16;
+const int BUTTON_1 = 12;
+const int BUTTON_2 = 14;
+const int BUTTON_3 = 27;
 
 void WifiInit() {
   WiFi.mode(WIFI_STA);
@@ -25,7 +26,9 @@ void WifiInit() {
 void setup() {
   Serial.begin(115200);
   WifiInit();
-  pinMode(BLOCK_ITM, INPUT);
+  pinMode(BUTTON_1, INPUT);
+  pinMode(BUTTON_2, INPUT);
+  pinMode(BUTTON_3, INPUT);
   server.on("/", HTTP_GET, []() {
     server.send(200, "text/html", "<!DOCTYPE html><html><head><title>ESP32 Server</title></head><body><h1>Sent From An ESP32</h1></body><style>html,body {text-align:center;}</style>");
   });
@@ -39,10 +42,18 @@ void setup() {
     output += "</div></body><style>html {text-align:center;justify-content:center;align-self:center;} .wifi{ display:block; margin: 10px; }</style></html>";
     server.send(200, "text/html", output);
   });
-  server.on("/dete", HTTP_GET, []() {
+  server.on("/btn", HTTP_GET, []() {
     String output = "";
-    output += "{ \n   'GPIO':" + String(digitalRead(BLOCK_ITM)) + "}";
-    server.send(200, "text/json", output);
+    if (digitalRead(BUTTON_1) === 1) {
+      output += "Button 1";  
+    }
+    if (digitalRead(BUTTON_2) === 1) {
+      output += "Button 2";  
+    }
+    if (digitalRead(BUTTON_3) === 1) {
+      output += "Button 3";  
+    }
+    server.send(200, "text/text", output);
   });
 }
 
