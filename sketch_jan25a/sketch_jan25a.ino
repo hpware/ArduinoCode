@@ -25,7 +25,7 @@ void WifiInit() {
 void setup() {
   Serial.begin(115200);
   WifiInit();
-  pinMode(BLOCK_ITM, INPUT);
+    pinMode(BLOCK_ITM, INPUT);
   server.on("/", HTTP_GET, []() {
     server.send(200, "text/html", "<!DOCTYPE html><html><head><title>ESP32 Server</title></head><body><h1>Sent From An ESP32</h1></body><style>html,body {text-align:center;}</style>");
   });
