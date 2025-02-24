@@ -1,14 +1,13 @@
 #include <BMS56M605.h>
 #include "values.h"
 
-BMS56M605 mpu(8);
+BMS56M605 mpu(3);
 
 
 void setup() {
   mpu.begin();
   Serial.begin(9600);
   Serial.println("a \n");
-  pinMode(LED_BUILTIN, OUTPUT);
 
 }
 
@@ -22,9 +21,9 @@ void event() {
     gx = mpu.gyroX;
     gy = mpu.gyroY;
     gz = mpu.gyroZ;
-    //if (gx < -100 || gy < -100 || gz < -100) {
-    //    Serial.println("You got hit by a car!");
-    //}
+    if (gx < -100 || gy < -100 || gz < -100) {
+        Serial.println("You got hit by a car!");
+    }
     if (gx < -100 && gy < -100) {
         Serial.println("Oops! You just fell down on the floor! -x & -y");
         
@@ -59,8 +58,5 @@ void event() {
     delay(100);
 }
 void btn1() {
-  digitalWrite(LED_BUILTIN, HIGH);  // turn the LED on (HIGH is the voltage level)
-  delay(10);                      // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);   // turn the LED off by making the voltage LOW
-  delay(10);  
+  Serial.print("\n");
 }
