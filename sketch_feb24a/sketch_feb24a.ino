@@ -1,4 +1,3 @@
-
 // DEVICE 2 (ESP32-WROOM-32D)
 #define RX2 16
 #define TX2 17
@@ -10,9 +9,11 @@ void setup() {
 }
 
 void loop() {
-  if (Serial2.available()) { // Using Serial2
+  while (Serial2.available()) {
     String receivedData = Serial2.readStringUntil('\n');
-    Serial.print("Received: ");
-    Serial.println(receivedData);
+    if (receivedData.length() > 0) {
+      Serial.print("Received: ");
+      Serial.println(receivedData);
+    }
   }
 }

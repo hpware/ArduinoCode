@@ -9,7 +9,8 @@ void setup() {
 }
 
 void loop() {
-  Serial1.println("Net");
-  Serial.println("data");
+  String dataToSend = "Data_from_Device1:" + String(millis());
+  Serial1.println(dataToSend);
+  Serial.println("Sent: " + dataToSend);
   delay(1000);
 }
