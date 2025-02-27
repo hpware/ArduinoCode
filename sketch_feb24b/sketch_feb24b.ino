@@ -3,8 +3,8 @@
 #define TX1 1
       
 void setup() {
-  Serial.begin(9600);
-  Serial1.begin(9600, SERIAL_8N1, RX1, TX1); // Correct pins already
+  Serial.begin(115200);
+  Serial1.begin(115200, SERIAL_8N1, RX1, TX1); // Correct pins already
   Serial.println("Device 1 (Super Mini) started.");
 }
 
