@@ -1,4 +1,4 @@
-// Device 2 (立原)
+// Device 2 (立原c
 #include <Wire.h>
 #include "I2Cdev.h"
 #include "MPU6050.h"
