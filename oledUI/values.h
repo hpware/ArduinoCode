@@ -7,5 +7,8 @@ int b1p = 33;
 int b2p = 34;
 int b3p = 36;
 // Screen SDA SCL pins
+//int sda = 21;
+//int scl = 22;
+// Text pins
 int sda = 21;
-int scl = 22;
+int scl = 20;
