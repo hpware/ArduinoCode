@@ -11,4 +11,4 @@ int b3p = 36;
 //int scl = 22;
 // Text pins
 int sda = 21;
-int scl = 20;
+int scl = 22;
