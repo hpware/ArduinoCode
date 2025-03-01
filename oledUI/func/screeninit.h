@@ -1,0 +1,3 @@
+void screeninit() {
+    display.begin()
+}
