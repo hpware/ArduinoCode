@@ -36,7 +36,7 @@ void displayindex() {
         display.print("\n")
     } else {
         display.print("Internet");
-        xmark();
+        emark();
         display.print("錯誤");
         display.print("\n");
     }
