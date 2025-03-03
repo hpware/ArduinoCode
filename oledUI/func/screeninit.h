@@ -13,6 +13,6 @@ void screeninit() {
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.setCursor(10, 10);
-    display.println("hwllo");
+    display.println("hwllo")
     display.display();
 }
