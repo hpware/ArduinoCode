@@ -1,16 +1,13 @@
-// Init
+#include <Arduino.h>
 #include "init.h"
-// Values
 #include "values.h"
-// Screen Contents
 #include "displayContents/index.h"
 
-
-// DNT
 void setup() {
-    init();
+  init();
 }
 
 void loop() {
-    
-} 
+  displayindex();
+  delay(1000);
+}

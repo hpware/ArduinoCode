@@ -4,58 +4,48 @@
 #include "../func/svgs.h"
 // values within the component.
 int timex = 10;
-int timey = 2;
+int timey = 12; 
 bool ampmchangeb = false;
-int refresh = 0;
-// index of the display component.
+int refresh = 0;String hourStr = "12";
+String minuteStr = "00";
+bool initialized = false;
+String data = "No Data";
+bool dataFail = false;
 void displayindex() {
-    // Init
+    display.clearBuffer();
+    display.setFont(u8g2_font_profont12_tr);
     String ampmchange = "";
-    // Date Component
-    display.setCursor(1,2);
-    if (!data) {
-        display.println(data);
+    display.setCursor(1, 12);
+    char dataBuffer[50];
+    data.toCharArray(dataBuffer, 50);
+    display.drawStr(1, 12, dataBuffer);  
+    char timeBuffer[10];
+    String timeStr = hourStr + ":" + minuteStr;
+    timeStr.toCharArray(timeBuffer, 10);
+    display.drawStr(timex, timey, timeBuffer); 
+    if (ampmchangeb == true) {
+        char ampmBuffer[10];
+        ampmchange.toCharArray(ampmBuffer, 10);
+        display.drawStr(40, 40, ampmBuffer);     
     }
-    // time component
-    // clear area
-    display.fillRect(timex, timey, 3, 77, BLACK);
-    display.setCursor(timex, timey);
-    display.print(hr + ":" + min);
-    // am pm change component
-    display.setCuror(40,30);
-    if (ampmchangeb = true) {
-        display.print(ampmchange);
-        ampbchangeb = false;
-    }
-    // Network status
-    display.setCursor(70,50);
-    if (!data.fail) {
-        display.print("Internet:");
-        checkmark();
-        display.print(ipaddr);
-        display.print("\n")
+    if (!dataFail) {
+        display.drawStr(70, 60, "Internet:");
+        checkmark(70,60);
     } else {
-        display.print("Internet");
-        emark();
-        display.print("錯誤");
-        display.print("\n");
+        display.drawStr(70, 60, "Internet");
+        emark(70, 60);
+        display.drawStr(90, 60, "錯誤");
     }
-    // arrows to navagate
-    if (!init) {
-        display.setCusor(77,23);
-        display.print("投餌");
-        downsvg();
-        display.setCursor(77,25);
-        display.print("重新連線");
-        downsvg();
-        display.setCursor(77, 27);
-        display.print("更新資料");
-        downsvg();
+    if (!initialized) {
+        display.drawStr(77, 33, "投餌");
+        downsvg(77,33);
+        display.drawStr(77, 45, "重新連線");
+        downsvg(77,45);
+        display.drawStr(77, 57, "更新資料");
+        downsvg(77,57);
     }
-    // end
-    display.display();
-    // forced to refresh every single hour
-    if (refresh = 3600) {
+    display.sendBuffer();
+    if (refresh == 3600) {
         refresh = 0;
     } else {
         refresh += 1;
