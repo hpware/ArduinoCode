@@ -1,52 +1,109 @@
-// Design: https://i.imgur.com/58N0Im3.png
+// OG Design: https://i.imgur.com/58N0Im3.png
 
 // Import SVGs
 #include "../func/svgs.h"
-// values within the component.
-int timex = 10;
-int timey = 12; 
-bool ampmchangeb = false;
-int refresh = 0;String hourStr = "12";
-String minuteStr = "00";
+
 bool initialized = false;
-String data = "No Data";
-bool dataFail = false;
+int refresh = 0;
+String dataStr = "No data"; 
+bool dataFail = false; 
+// DATE STUFF
+String date = "2024-12-1";
+int hourVal = 00;
+int minuteVal = 00;
+int secVal = 00;
+String dataminVal ="";
+String datahrVal = "";
+// OTHER DATA
+float phData = 0;
+float tempData = 0;
+
 void displayindex() {
-    display.clearBuffer();
-    display.setFont(u8g2_font_profont12_tr);
-    String ampmchange = "";
-    display.setCursor(1, 12);
-    char dataBuffer[50];
-    data.toCharArray(dataBuffer, 50);
-    display.drawStr(1, 12, dataBuffer);  
-    char timeBuffer[10];
-    String timeStr = hourStr + ":" + minuteStr;
-    timeStr.toCharArray(timeBuffer, 10);
-    display.drawStr(timex, timey, timeBuffer); 
-    if (ampmchangeb == true) {
-        char ampmBuffer[10];
-        ampmchange.toCharArray(ampmBuffer, 10);
-        display.drawStr(40, 40, ampmBuffer);     
-    }
-    if (!dataFail) {
-        display.drawStr(70, 60, "Internet:");
-        checkmark(70,60);
+    //display.fillRect(10,1,3,77,BLACK);
+    display.setCursor(10,1);
+    display.print(date);
+    display.setTextSize(1);
+    display.setCursor(6, 10);
+    // Time Component
+    // Second
+    if (secVal == 60 || !initialized) {
+        secVal = 0;
+        minuteVal += 1;
+        if (!initialized) {
+            minuteVal -= 1;
+        }
+        if (String(minuteVal).length() == 1) {
+            dataminVal = "0" + String(minuteVal);
+        } else {
+            dataminVal = String(minuteVal);
+        }
+        if (String(hourVal).length() == 1) {
+            datahrVal = "0" + String(hourVal);
+        } else {
+            datahrVal = String(hourVal);
+        }
+        display.fillRect(6, 10, 120, 20, BLACK);
+        display.print(datahrVal + ":" + dataminVal); 
     } else {
-        display.drawStr(70, 60, "Internet");
-        emark(70, 60);
-        display.drawStr(90, 60, "錯誤");
+        secVal += 1;
     }
-    if (!initialized) {
-        display.drawStr(77, 33, "投餌");
-        downsvg(77,33);
-        display.drawStr(77, 45, "重新連線");
-        downsvg(77,45);
-        display.drawStr(77, 57, "更新資料");
-        downsvg(77,57);
+    // Minute
+    if (minuteVal == 60) {
+        minuteVal = 00;
     }
-    display.sendBuffer();
-    if (refresh == 3600) {
+    // Hour 
+    if (hourVal == 24) {
+        hourVal = 00;
+    }
+    display.setTextSize(1); 
+    display.setCursor(6,28);
+    display.print("WiFi:");
+    if (!dataFail) {
+        display.print(ssid);
+        display.print("\n");
+    } else {
+        display.print("Error");
+        display.print("\n");
+    }
+    display.setCursor(6,37);
+    display.print("IP:");
+    if (!dataFail) { 
+        display.print(ipAddr);
+        //checkmark(20,28,1);
+        display.print("\n");
+    } else {
+        //emark(80,2,2);
+        display.print("Error");
+        display.print("\n");
+    }
+    /**if (!initialized) { 
+        display.setCursor(23,44); 
+        display.print("Feed");
+        downsvg(25, 50, 1);
+        display.setCursor(56,44);
+        disdplay.print("RST");
+        downsvg(55, 50, 1);
+        display.setCursor(82, 44);
+        display.print("UDT");
+        downsvg(81,50,1);
+        initialized = true;
+    }*/
+    if (lastPH != phData || !initialized) {
+        display.setCursor(70,4);
+        display.print(phData);
+        display.print(" ph");
+        phData = lastPH;
+    }
+    if (tempData != lastTemp || !initialized) {
+        display.setCursor(70,15);
+        display.print(tempData);
+        display.print(" C");
+        tempData = lastTemp;
+    }
+    display.display();
+    if (refresh == 3600) { 
         refresh = 0;
+        initialized = false;
     } else {
         refresh += 1;
     }
