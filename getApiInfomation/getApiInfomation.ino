@@ -6,7 +6,7 @@
 
 const char *ssid = "hel";
 const char *password = "1234567890";
-const char *serverUrl = "http://192.168.1.27:3000/";
+const char *serverUrl = "http://49jfc.api.go64.cc/";
 
 // SD CARD 引腳
 #define SD_CS 5
