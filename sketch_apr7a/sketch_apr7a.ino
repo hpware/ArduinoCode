@@ -38,15 +38,10 @@ void setup() {
   dht_sensor.begin();
 }
 void loop() {
-  float hum = dht_sensor.readHumidity();
-  float temp = dht_sensor.readTemperature();
-  Serial.print("hum: ");
-  Serial.print(hum);
-  Serial.print(" Temp: ");
-  Serial.println(temp);
+  GetTemp();
   while (GPS_Serial.available() > 0) {
     gps.encode(GPS_Serial.read());
-  
+    GetTemp();
     if (gps.location.isUpdated()) {
       Serial.print("經度: ");
       Serial.println(gps.location.lng(), 6);
@@ -74,7 +69,7 @@ void loop() {
 void sendRequest(String lng, String lat) {
   RequestOptions options;
   options.method = "GET";
-  String serverUrl = serverUrl1 + lng + "/" + lat;
+  String serverUrl = serverUrl1 + lat + "/" + lng;
   
   Serial.println("Requesting weather data from: " + serverUrl);
   // Make sure we're converting String to const char* here
@@ -117,4 +112,13 @@ void sendRequest(String lng, String lat) {
     Serial.println("Response status: " + String(response.status));
     Serial.println("Response body: " + response.text());
   }
+}
+
+void GetTemp() {
+  float hum = dht_sensor.readHumidity();
+  float temp = dht_sensor.readTemperature();
+  Serial.print("hum: ");
+  Serial.print(hum);
+  Serial.print(" Temp: ");
+  Serial.println(temp);
 }
