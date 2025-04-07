@@ -5,19 +5,24 @@
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
+#include <DHT.h>
+#define DHT_SENSOR_PIN 21
+#define DHT_SENSOR_TYPE DHT11
 
-const char *ssid = "a";
-const char *password = "pi=3.14!";
+const char *ssid = "hel";
+const char *password = "1234567890";
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
 String data = "";
 bool sendData = false;
 
 TinyGPSPlus gps;
-HardwareSerial GPS_Serial(1); // 使用 UART1
+HardwareSerial GPS_Serial(1);
+
+DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 
 void setup() {
   Serial.begin(115200);
-  GPS_Serial.begin(9600, SERIAL_8N1, 16, 17); // RX = 16, TX = 17
+  GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
   Serial.println("GPS 模組啟動中...");
     WiFi.begin(ssid, password);
 
@@ -30,12 +35,18 @@ void setup() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+  dht_sensor.begin();
 }
-
 void loop() {
+  float hum = dht_sensor.readHumidity();
+  float temp = dht_sensor.readTemperature();
+  Serial.print("hum: ");
+  Serial.print(hum);
+  Serial.print(" Temp: ");
+  Serial.println(temp);
   while (GPS_Serial.available() > 0) {
     gps.encode(GPS_Serial.read());
-
+  
     if (gps.location.isUpdated()) {
       Serial.print("經度: ");
       Serial.println(gps.location.lng(), 6);
