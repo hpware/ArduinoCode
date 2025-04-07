@@ -9,6 +9,32 @@
 #include <SD.h>
 #include "Fetch.h"
 #include <SPI.h>
+// WIFI.h
+// Makes the device connect to a WiFi router or hotspot.
+void connectWiFi(const char* ssid, const char* passphrase) {
+    // Disconnecting WiFi if it"s already connected.
+    WiFi.disconnect();
+    // Setting it to Station mode which basically scans for nearby WiFi routers or hotspots.
+    WiFi.mode(WIFI_STA);
+    // Begin connecting to WiFi using the provided ssid and passphrase.
+    WiFi.begin(ssid, passphrase);
+    // Print a debug log to Serial.
+    Serial.printf("\nDevice is connecting to WiFi using SSID %s and Passphrase %s.\n", ssid, passphrase);
+    // Keep looping until the WiFi is not connected.
+    while (WiFi.status() != WL_CONNECTED) {
+        // Print dots in a horizontal line to the Serial, showing the WiFi is trying to connect.
+        Serial.print(".");
+        delay(1000);
+        // Blink LED very fast, showing the WiFi is trying to connect.
+        // blinkN(10);
+    }
+    // Stop the LED blinking, showing the WiFi is successfully connected.
+    // blinkStop();
+    // Print debug logs to Serial.
+    Serial.println("WiFi connected");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP()); // Local IP Address of the ESP8266 device.
+}
 
 // 腳位定義
 #define RX_PIN 16
@@ -216,7 +242,10 @@ void loop() {
 }
 
 void sendFileToServer(File &file) {
-  RequestOptions options;
+    if (SD.exists(filename)) {
+    Serial.println("File exists!");
+    audio.connecttoFS(SD, filename);
+      RequestOptions options;
   options.method = "POST";
   options.headers["Content-Type"] = "audio/mpeg";
 
@@ -248,4 +277,18 @@ void sendFileToServer(File &file) {
 
   // Free allocated memory
   delete[] fileContent;
+  } else {
+    Serial.print("File not found: ");
+    Serial.println(filename);
+    
+    // 列出所有可用檔案以進行偵錯
+    File root = SD.open("/");
+    while (true) {
+      File entry = root.openNextFile();
+      if (!entry) break;
+      Serial.print("Available file: ");
+      Serial.println(entry.name());
+      entry.close();
+    }
+    root.close();
 }
