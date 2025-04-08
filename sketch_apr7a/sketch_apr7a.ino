@@ -10,7 +10,7 @@
 #define DHT_SENSOR_TYPE DHT11
 
 const char *ssid = "hel";
-const char *password = "1234567890";
+const char *password = "";
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
 String data = "";
 bool sendData = false;
@@ -81,7 +81,7 @@ void sendRequest(String lng, String lat) {
     Serial.println("Data received successfully");
     
     // Parse the JSON response
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(2048); // doc(YOUR_JSON_SIZE_THAT_CAN_BE_STORED_IN_RAM), I should check how big the json *SHOULD be* and put the correct number into it.
     DeserializationError error = deserializeJson(doc, response.text());
     
     if (error) {
