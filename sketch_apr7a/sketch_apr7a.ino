@@ -1,11 +1,11 @@
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
-#include "recipes/WiFi.h"
 #include "Fetch.h"
 #include <ArduinoJson.h>
 #include <SD.h>
 #include <SPI.h>
 #include <DHT.h>
+#include <WiFi.h>
 #include <ArduinoOTA.h>
 #define DHT_SENSOR_PIN 21
 #define DHT_SENSOR_TYPE DHT11
@@ -16,15 +16,18 @@ const char *password = "1234567890";
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
 String data = "";
 bool sendData = false;
+bool isJiPowerOn = false;
+int JipowerTime = 0;
 
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
+HardwareSerial H87_Serial(2);
 
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
-
 void setup() {
   Serial.begin(115200);
   GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
+  H87_Serial.begin(115200, SERIAL_8N1, 26, 27); 
   Serial.println("GPS 模組啟動中...");
     WiFi.begin(ssid, password);
 
@@ -76,14 +79,15 @@ void setup() {
       });
     ArduinoOTA.begin();
   }
+  delay(3000);
 }
 void loop() {
   ArduinoOTA.handle();
-  digitalWrite(JIPOWER_PIN, HIGH);
   GetTemp();
-  delay(500);
-  digitalWrite(JIPOWER_PIN, LOW);
-    delay(500);
+  SetJiPower();
+  Serial.println(H87_Serial.read());
+  Serial.println(WiFi.localIP());
+  delay(10);
   while (GPS_Serial.available() > 0) {
     gps.encode(GPS_Serial.read());
     GetTemp();
@@ -160,10 +164,24 @@ void sendRequest(String lng, String lat) {
 }
 
 void GetTemp() {
-  float hum = dht_sensor.readHumidity();
   float temp = dht_sensor.readTemperature();
+  float hum = dht_sensor.readHumidity();
   Serial.print("hum: ");
   Serial.print(hum);
   Serial.print(" Temp: ");
   Serial.println(temp);
+}
+
+void SetJiPower() {
+  if (isJiPowerOn == false && JipowerTime == 300) {
+    digitalWrite(JIPOWER_PIN, HIGH);
+    isJiPowerOn = true;
+    JipowerTime = 0;
+  }
+  if (isJiPowerOn == true && JipowerTime == 300) {
+      digitalWrite(JIPOWER_PIN, LOW);
+      JipowerTime = 0;
+      isJiPowerOn = false;
+  }
+    JipowerTime += 1;
 }
