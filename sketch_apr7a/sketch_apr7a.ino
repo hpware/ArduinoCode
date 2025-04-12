@@ -210,8 +210,8 @@ void SetJiPower() {
   }
     JipowerTime += 1;
 }
-
 void sendData22() {
+    Serial.println("Raw data: " + data);
     static unsigned long lastFetchTime = 0;
     const unsigned long FETCH_INTERVAL = 60000; // 1 minute
 
@@ -222,7 +222,7 @@ void sendData22() {
         return;
     }
 
-    DynamicJsonDocument weatherData(4096);
+    DynamicJsonDocument weatherData(2048);
     DeserializationError error = deserializeJson(weatherData, data);
 
     if (error) {
@@ -233,21 +233,41 @@ void sendData22() {
     }
 
     // Rest of the existing code remains the same
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(2048);
     
-    if (weatherData.containsKey("cwbData")) {
-        doc["cwa_type"] = weatherData["cwbData"]["wxData"] | "雲";
+        if (weatherData.containsKey("cwbData")) {
+        doc["cwa_type"] = weatherData["cwbData"]["weather"] | "雲";
         doc["cwa_location"] = "新北市";
-        doc["cwa_temp"] = weatherData["cwbData"]["tempData"] | 25.5;
-        doc["cwa_hum"] = weatherData["cwbData"]["humData"] | 60;
-        doc["cwa_daliyHigh"] = weatherData["cwbData"]["maxT"] | 15;
-        doc["cwa_daliyLow"] = weatherData["cwbData"]["minT"] | 30.1;
+        doc["cwa_temp"] = weatherData["cwbData"]["temperature"] | 25.5;
+        doc["cwa_hum"] = weatherData["cwbData"]["humidity"] | 60;
+        doc["cwa_daliyHigh"] = weatherData["cwbData"]["dailyHigh"] | 26;
+        doc["cwa_daliyLow"] = weatherData["cwbData"]["dailyLow"] | 15;
     } else {
         Serial.println("No weather data available, retrying fetch...");
         sendRequest(defaultlong, defaultlat);
         delay(1000);
-        return;
     }
 
-    // ...existing code...
+    doc["local_temp"] = dht_sensor.readTemperature();
+    doc["local_hum"] = dht_sensor.readHumidity();
+    doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
+    doc["local_gps_long"] = gpsLong.length() > 0 ? gpsLong : defaultlong;
+    doc["local_time"] = gpsTime.length() > 0 ? gpsTime : "2024-03-20 15:30:00";
+    doc["local_jistatus"] = isJiPowerOn;
+
+    JsonArray detect = doc.createNestedArray("local_detect");
+    detect.add("person");
+    detect.add("car");
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    RequestOptions options;
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.headers["Content-Length"] = String(jsonString.length());
+    options.body = jsonString;
+
+    Response response = fetch(serverUrl2, options);
+    Serial.println("Sent: " + jsonString);
 }
