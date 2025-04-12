@@ -11,13 +11,20 @@
 #define DHT_SENSOR_TYPE DHT11
 #define JIPOWER_PIN 22
 
-const char *ssid = "hel";
-const char *password = "1234567890";
+const char *ssid = "a";
+const char *password = "pi!=7.188";
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
+const char *serverUrl2 = "https://edu.yhw.tw/logger/store";
 String data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
 int JipowerTime = 0;
+String defaultlat = "25.134393";
+String defaultlong = "121.469968";
+String gpsLat = "";
+String gpsLong = "";
+String gpsTime = "";
+bool shouldSendData = false;
 
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
@@ -43,6 +50,7 @@ void setup() {
   dht_sensor.begin();
   pinMode(JIPOWER_PIN, OUTPUT);
   digitalWrite(JIPOWER_PIN, LOW);
+  SetJiPower();
   // OTA
   if (WiFi.status() == WL_CONNECTED) {
     ArduinoOTA.setPort(3232);
@@ -82,20 +90,34 @@ void setup() {
   delay(3000);
 }
 void loop() {
-  ArduinoOTA.handle();
-  GetTemp();
-  SetJiPower();
-  Serial.println(H87_Serial.read());
-  Serial.println(WiFi.localIP());
+    ArduinoOTA.handle();
+    GetTemp();
+    SetJiPower();
+    sendData22();
+    if (H87_Serial.available()) {
+    String receivedData = H87_Serial.readStringUntil('\n');  // 一次讀一筆直到換行
+    Serial.print("來自 HUB8735: ");
+    Serial.println(receivedData);
+    }
   delay(10);
   while (GPS_Serial.available() > 0) {
     gps.encode(GPS_Serial.read());
+        ArduinoOTA.handle();
     GetTemp();
+    SetJiPower();
+    sendData22();
+    if (H87_Serial.available()) {
+    String receivedData = H87_Serial.readStringUntil('\n');  // 一次讀一筆直到換行
+    Serial.print("來自 HUB8735: ");
+    Serial.println(receivedData);
+  }
     if (gps.location.isUpdated()) {
       Serial.print("經度: ");
       Serial.println(gps.location.lng(), 6);
+      gpsLong = gps.location.lng(), 6;
       Serial.print("緯度: ");
       Serial.println(gps.location.lat(), 6);
+      gpsLat = gps.location.lat(), 6;
       Serial.print("速度: ");
       Serial.println(gps.speed.kmph());
       Serial.print("高度: ");
@@ -106,7 +128,10 @@ void loop() {
       Serial.print(gps.time.minute());
       Serial.print(":");
       Serial.println(gps.time.second());
-      
+      gpsTime = String(gps.time.hour()) + ":" + 
+         String(gps.time.minute()) + ":" + 
+         String(gps.time.second());
+      Serial.println(gpsTime);
       // Send request to get weather data based on GPS coordinates
       sendRequest(String(gps.location.lng(), 6), String(gps.location.lat(), 6));
       
@@ -184,4 +209,49 @@ void SetJiPower() {
       isJiPowerOn = false;
   }
     JipowerTime += 1;
+}
+void sendData22() {
+    Serial.println("Raw data: " + data);
+    
+    DynamicJsonDocument weatherData(4096);
+    DeserializationError error = deserializeJson(weatherData, data);
+
+    if (error) {
+        Serial.println("Parse failed: " + String(error.c_str()));
+        return;
+    }
+
+    DynamicJsonDocument doc(4096);
+    
+    if (weatherData.containsKey("cwbData")) {
+        doc["cwa_type"] = weatherData["cwbData"]["wxData"] | "unknown";
+        doc["cwa_location"] = "新北市";
+        doc["cwa_temp"] = weatherData["cwbData"]["tempData"] | 0.0f;
+        doc["cwa_hum"] = weatherData["cwbData"]["humData"] | 0;
+        doc["cwa_daliyHigh"] = weatherData["cwbData"]["maxT"] | 0.0f;
+        doc["cwa_daliyLow"] = weatherData["cwbData"]["minT"] | 0.0f;
+    }
+
+    doc["local_temp"] = dht_sensor.readTemperature();
+    doc["local_hum"] = dht_sensor.readHumidity();
+    doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
+    doc["local_gps_long"] = gpsLong.length() > 0 ? gpsLong : defaultlong;
+    doc["local_time"] = gpsTime.length() > 0 ? gpsTime : "2024-03-20 15:30:00";
+    doc["local_jistatus"] = isJiPowerOn;
+
+    JsonArray detect = doc.createNestedArray("local_detect");
+    detect.add("person");
+    detect.add("car");
+
+    String jsonString;
+    serializeJson(doc, jsonString);
+
+    RequestOptions options;
+    options.method = "POST";
+    options.headers["Content-Type"] = "application/json";
+    options.headers["Content-Length"] = String(jsonString.length());
+    options.body = jsonString;
+
+    Response response = fetch(serverUrl2, options);
+    Serial.println("Sent: " + jsonString);
 }

@@ -4,6 +4,11 @@
         "xutility": "cpp",
         "algorithm": "cpp",
         "limits": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "ostream": "cpp",
+        "array": "cpp",
+        "ranges": "cpp",
+        "span": "cpp",
+        "xstring": "cpp"
     }
 }
