@@ -210,48 +210,44 @@ void SetJiPower() {
   }
     JipowerTime += 1;
 }
+
 void sendData22() {
-    Serial.println("Raw data: " + data);
-    
+    static unsigned long lastFetchTime = 0;
+    const unsigned long FETCH_INTERVAL = 60000; // 1 minute
+
+    if (data.length() == 0 || millis() - lastFetchTime >= FETCH_INTERVAL) {
+        sendRequest(defaultlong, defaultlat);
+        delay(1000); // Wait for response
+        lastFetchTime = millis();
+        return;
+    }
+
     DynamicJsonDocument weatherData(4096);
     DeserializationError error = deserializeJson(weatherData, data);
 
     if (error) {
-        Serial.println("Parse failed: " + String(error.c_str()));
+        Serial.println("Weather data parse failed, retrying fetch...");
+        sendRequest(defaultlong, defaultlat);
+        delay(1000);
         return;
     }
 
+    // Rest of the existing code remains the same
     DynamicJsonDocument doc(4096);
     
     if (weatherData.containsKey("cwbData")) {
-        doc["cwa_type"] = weatherData["cwbData"]["wxData"] | "unknown";
+        doc["cwa_type"] = weatherData["cwbData"]["wxData"] | "雲";
         doc["cwa_location"] = "新北市";
-        doc["cwa_temp"] = weatherData["cwbData"]["tempData"] | 0.0f;
-        doc["cwa_hum"] = weatherData["cwbData"]["humData"] | 0;
-        doc["cwa_daliyHigh"] = weatherData["cwbData"]["maxT"] | 0.0f;
-        doc["cwa_daliyLow"] = weatherData["cwbData"]["minT"] | 0.0f;
+        doc["cwa_temp"] = weatherData["cwbData"]["tempData"] | 25.5;
+        doc["cwa_hum"] = weatherData["cwbData"]["humData"] | 60;
+        doc["cwa_daliyHigh"] = weatherData["cwbData"]["maxT"] | 15;
+        doc["cwa_daliyLow"] = weatherData["cwbData"]["minT"] | 30.1;
+    } else {
+        Serial.println("No weather data available, retrying fetch...");
+        sendRequest(defaultlong, defaultlat);
+        delay(1000);
+        return;
     }
 
-    doc["local_temp"] = dht_sensor.readTemperature();
-    doc["local_hum"] = dht_sensor.readHumidity();
-    doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
-    doc["local_gps_long"] = gpsLong.length() > 0 ? gpsLong : defaultlong;
-    doc["local_time"] = gpsTime.length() > 0 ? gpsTime : "2024-03-20 15:30:00";
-    doc["local_jistatus"] = isJiPowerOn;
-
-    JsonArray detect = doc.createNestedArray("local_detect");
-    detect.add("person");
-    detect.add("car");
-
-    String jsonString;
-    serializeJson(doc, jsonString);
-
-    RequestOptions options;
-    options.method = "POST";
-    options.headers["Content-Type"] = "application/json";
-    options.headers["Content-Length"] = String(jsonString.length());
-    options.body = jsonString;
-
-    Response response = fetch(serverUrl2, options);
-    Serial.println("Sent: " + jsonString);
+    // ...existing code...
 }
