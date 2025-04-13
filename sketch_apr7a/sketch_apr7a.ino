@@ -18,6 +18,7 @@ const char *serverUrl2 = "https://edu.yhw.tw/logger/store";
 String data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
+bool initJiPower  = true;
 int JipowerTime = 0;
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
@@ -25,6 +26,29 @@ String gpsLat = "";
 String gpsLong = "";
 String gpsTime = "";
 bool shouldSendData = false;
+const unsigned long JI_POWER_INTERVAL = 30;  // Power cycle interval
+const unsigned long FETCH_INTERVAL = 60000;  // Weather data fetch interval (1 minute)
+const unsigned long RESPONSE_DELAY = 1000;   // Delay waiting for response
+// Task intervals
+const unsigned long TEMP_INTERVAL = 2000;      // 2 seconds
+const unsigned long GPS_INTERVAL = 3600000;     // 1 hour
+const unsigned long WEATHER_INTERVAL = 300000;  // 5 minutes
+const unsigned long POWER_INTERVAL = 30000;     // 30 seconds
+const unsigned long SENDDATA_INTERVAL = 10000; // 10 seconds
+
+// Task timers
+unsigned long lastTempCheck = 0;
+unsigned long lastGPSCheck = 0;
+unsigned long lastWeatherCheck = 0;
+unsigned long lastPowerCheck = 0;
+unsigned long lastSentData = 0;
+
+// State flags
+bool isRequestPending = false;
+unsigned long requestStartTime = 0;
+const unsigned long REQUEST_TIMEOUT = 10000; // 10 second timeout
+bool initSystem = false;
+
 
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
@@ -89,83 +113,153 @@ void setup() {
   }
   delay(3000);
 }
+
 void loop() {
-    ArduinoOTA.handle();
-    GetTemp();
-    SetJiPower();
-    sendData22();
-    if (H87_Serial.available()) {
-    String receivedData = H87_Serial.readStringUntil('\n');  // 一次讀一筆直到換行
-    Serial.print("來自 HUB8735: ");
-    Serial.println(receivedData);
+    unsigned long currentMillis = millis();
+    // Serial.println("Time" + String(currentMillis)); // Optional: Uncomment for debugging time
+
+    // Temperature check
+    // Use logical OR (||) and comparison (==)
+    if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
+        GetTemp();
+        lastTempCheck = currentMillis;
     }
-  delay(10);
-  while (GPS_Serial.available() > 0) {
-    gps.encode(GPS_Serial.read());
-        ArduinoOTA.handle();
-    GetTemp();
-    SetJiPower();
-    sendData22();
-    if (H87_Serial.available()) {
-    String receivedData = H87_Serial.readStringUntil('\n');  // 一次讀一筆直到換行
-    Serial.print("來自 HUB8735: ");
-    Serial.println(receivedData);
-  }
-    if (gps.location.isUpdated()) {
-      Serial.print("經度: ");
-      Serial.println(gps.location.lng(), 6);
-      gpsLong = gps.location.lng(), 6;
-      Serial.print("緯度: ");
-      Serial.println(gps.location.lat(), 6);
-      gpsLat = gps.location.lat(), 6;
-      Serial.print("速度: ");
-      Serial.println(gps.speed.kmph());
-      Serial.print("高度: ");
-      Serial.println(gps.altitude.meters());
-      Serial.print("時間: ");
-      Serial.print(gps.time.hour());
-      Serial.print(":");
-      Serial.print(gps.time.minute());
-      Serial.print(":");
-      Serial.println(gps.time.second());
-      gpsTime = String(gps.time.hour()) + ":" + 
-         String(gps.time.minute()) + ":" + 
-         String(gps.time.second());
-      Serial.println(gpsTime);
-      // Send request to get weather data based on GPS coordinates
-      sendRequest(String(gps.location.lng(), 6), String(gps.location.lat(), 6));
-      
-      Serial.println("-----------------------------");
+
+    // GPS check
+    if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false) {
+        checkGPS();
+        lastGPSCheck = currentMillis;
     }
-  }
+
+    // Weather check
+    // Check for timeout on weather request
+    // Note: The initSystem check here might need review. Do you always want to check timeout on init?
+    if ((isRequestPending && currentMillis - requestStartTime >= REQUEST_TIMEOUT) || initSystem == false) {
+        if (isRequestPending) { // Only print timeout if it actually was pending
+           isRequestPending = false;
+           Serial.println("Weather request timeout");
+        }
+        // Consider if you need to trigger a new request here or just reset the flag
+    }
+
+    // Trigger weather request if needed (moved this logic slightly for clarity)
+    if (currentMillis - lastWeatherCheck >= WEATHER_INTERVAL || initSystem == false) {
+         if (!isRequestPending) { // Only start if not already pending
+             startWeatherRequest(); // Start the request
+             lastWeatherCheck = currentMillis; // Update check time when request *starts*
+         }
+    }
+
+
+    // Power management
+    if (currentMillis - lastPowerCheck >= POWER_INTERVAL || initSystem == false) {
+        SetJiPower();
+        lastPowerCheck = currentMillis;
+    }
+
+    if (currentMillis - lastSentData >= SENDDATA_INTERVAL || initSystem == false) {
+        sendData22();
+        lastSentData = currentMillis;
+    }
+    // Process any incoming serial data
+    processSerial();
+
+    // Handle OTA updates
+    ArduinoOTA.handle(); // Make sure to call this in the loop for OTA to work
+
+    if (initSystem == false) {
+        initSystem = true; // Set initSystem to true after the first pass
+        Serial.println("Initial system checks complete.");
+    }
+}
+
+void startWeatherRequest() {
+    // Removed the check from here, it's handled before calling now
+    isRequestPending = true;
+    requestStartTime = millis();
+    // Use current GPS or defaults if GPS isn't valid yet
+    String latToUse = (gpsLat.length() > 0) ? gpsLat : defaultlat;
+    String lonToUse = (gpsLong.length() > 0) ? gpsLong : defaultlong;
+    sendRequest(lonToUse, latToUse);
+}
+    void processSerial() {
+        if (H87_Serial.available()) {
+            String receivedData = H87_Serial.readStringUntil('\n');
+            Serial.print("來自 HUB8735: ");
+            Serial.println(receivedData);
+    }
+}
+
+void checkGPS() {
+    if (GPS_Serial.available()) {
+        while (GPS_Serial.available() > 0) {
+            if (gps.encode(GPS_Serial.read())) {
+                getSignal();
+            }
+        }
+    }
+}
+
+void getSignal() {
+    if (gps.location.isValid()) {
+        Serial.println("GPS Data Updated:");
+        Serial.print("經度: ");
+        Serial.println(gps.location.lng(), 6);
+        Serial.print("緯度: ");
+        Serial.println(gps.location.lat(), 6);
+        Serial.print("速度: ");
+        Serial.println(gps.speed.kmph());
+        Serial.print("高度: ");
+        Serial.println(gps.altitude.meters());
+        Serial.print("時間: ");
+        Serial.print(gps.time.hour());
+        Serial.print(":");
+        Serial.print(gps.time.minute());
+        Serial.print(":");
+        Serial.println(gps.time.second());
+        
+        // Update global GPS variables
+        gpsLat = String(gps.location.lat(), 6);
+        gpsLong = String(gps.location.lng(), 6);
+        gpsTime = String(gps.time.hour()) + ":" + 
+                  String(gps.time.minute()) + ":" + 
+                  String(gps.time.second());
+                  
+        // Get weather data with new coordinates
+        sendRequest(gpsLong, gpsLat);
+    } else {
+        Serial.println("Waiting for valid GPS data...");
+    }
 }
 
 void sendRequest(String lng, String lat) {
   RequestOptions options;
   options.method = "GET";
+  // No need for default checks here if handled in startWeatherRequest
   String serverUrl = serverUrl1 + lat + "/" + lng;
-  
+
   Serial.println("Requesting weather data from: " + serverUrl);
-  // Make sure we're converting String to const char* here
   const char* urlChar = serverUrl.c_str();
   Response response = fetch(urlChar, options);
-  
+
   // Check response
   if (response.status == 200) {
     Serial.println("Data received successfully");
-    
+
     // Parse the JSON response
-    DynamicJsonDocument doc(2048); // doc(YOUR_JSON_SIZE_THAT_CAN_BE_STORED_IN_RAM), I should check how big the json *SHOULD be* and put the correct number into it.
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, response.text());
-    
+
     if (error) {
       Serial.print("JSON parsing failed: ");
       Serial.println(error.c_str());
-      return;
+      // Don't reset isRequestPending here on parse failure, maybe retry logic needed?
+      return; // Exit if parsing fails
     }
-    
+
     // Process and display the received data
     Serial.println("Weather data:");
+    // Use safer access methods
     if (doc.containsKey("temperature")) {
       Serial.print("Temperature: ");
       Serial.println(doc["temperature"].as<float>());
@@ -178,15 +272,19 @@ void sendRequest(String lng, String lat) {
       Serial.print("Weather: ");
       Serial.println(doc["weather"].as<String>());
     }
-    
+
     // Store data for later use if needed
-    data = response.text();
+    data = response.text(); // Store the raw JSON string
+    isRequestPending = false; // Request successful and parsed (or attempted parse)
   } else {
     Serial.println("Failed to get data");
     Serial.println("Response status: " + String(response.status));
     Serial.println("Response body: " + response.text());
+    isRequestPending = false; // Request failed
+    data = ""; // Clear old data on failure
   }
 }
+
 
 void GetTemp() {
   float temp = dht_sensor.readTemperature();
@@ -198,56 +296,62 @@ void GetTemp() {
 }
 
 void SetJiPower() {
-  if (isJiPowerOn == false && JipowerTime == 300) {
+  if (isJiPowerOn == false && JipowerTime == 30 || initJiPower == false) {
     digitalWrite(JIPOWER_PIN, HIGH);
     isJiPowerOn = true;
     JipowerTime = 0;
+    initJiPower = true;
   }
-  if (isJiPowerOn == true && JipowerTime == 300) {
+  if (isJiPowerOn == true && JipowerTime == 30) {
       digitalWrite(JIPOWER_PIN, LOW);
       JipowerTime = 0;
       isJiPowerOn = false;
   }
     JipowerTime += 1;
+    Serial.println(JipowerTime);
 }
-void sendData22() {
-    Serial.println("Raw data: " + data);
-    static unsigned long lastFetchTime = 0;
-    const unsigned long FETCH_INTERVAL = 60000; // 1 minute
 
+void sendData22() {
+      Serial.println("Starting sendData22...");
+
+    // Debug current values
+    Serial.println("Current GPS Data:");
+    Serial.println("Lat: " + gpsLat);
+    Serial.println("Long: " + gpsLong);
+    Serial.println("Time: " + gpsTime);
+    Serial.println("Raw data: " + data);
+      static unsigned long lastFetchTime = 0;
+    
+    Serial.println("Current weather data: " + data);
+
+    // Check if we need to fetch new data
     if (data.length() == 0 || millis() - lastFetchTime >= FETCH_INTERVAL) {
+        Serial.println("Fetching new weather data...");
         sendRequest(defaultlong, defaultlat);
-        delay(1000); // Wait for response
+        delay(RESPONSE_DELAY);
         lastFetchTime = millis();
         return;
     }
 
+    // Parse weather data
     DynamicJsonDocument weatherData(2048);
     DeserializationError error = deserializeJson(weatherData, data);
 
     if (error) {
-        Serial.println("Weather data parse failed, retrying fetch...");
+        Serial.println("Error parsing weather data: " + String(error.c_str()));
+        Serial.println("Retrying data fetch...");
         sendRequest(defaultlong, defaultlat);
-        delay(1000);
+        delay(RESPONSE_DELAY);
         return;
     }
-
     // Rest of the existing code remains the same
     DynamicJsonDocument doc(2048);
-    
-        if (weatherData.containsKey("cwbData")) {
-        doc["cwa_type"] = weatherData["cwbData"]["weather"] | "雲";
-        doc["cwa_location"] = "新北市";
-        doc["cwa_temp"] = weatherData["cwbData"]["temperature"] | 25.5;
-        doc["cwa_hum"] = weatherData["cwbData"]["humidity"] | 60;
-        doc["cwa_daliyHigh"] = weatherData["cwbData"]["dailyHigh"] | 26;
-        doc["cwa_daliyLow"] = weatherData["cwbData"]["dailyLow"] | 15;
-    } else {
-        Serial.println("No weather data available, retrying fetch...");
-        sendRequest(defaultlong, defaultlat);
-        delay(1000);
-    }
-
+        doc["cwa_type"] = "雲";
+        doc["cwa_location"] = " 新北市";
+        doc["cwa_temp"] = 25.5;
+        doc["cwa_hum"] = 60;
+        doc["cwa_daliyHigh"] = 26;
+        doc["cwa_daliyLow"] = 15;
     doc["local_temp"] = dht_sensor.readTemperature();
     doc["local_hum"] = dht_sensor.readHumidity();
     doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
@@ -257,7 +361,7 @@ void sendData22() {
 
     JsonArray detect = doc.createNestedArray("local_detect");
     detect.add("person");
-    detect.add("car");
+    detect.add("car");  
 
     String jsonString;
     serializeJson(doc, jsonString);
@@ -270,4 +374,8 @@ void sendData22() {
 
     Response response = fetch(serverUrl2, options);
     Serial.println("Sent: " + jsonString);
+
+    if (response.code = 200) {
+      Serial.println("Done :)");
+    }
 }
