@@ -116,37 +116,28 @@ void setup() {
 
 void loop() {
     unsigned long currentMillis = millis();
-    // Serial.println("Time" + String(currentMillis)); // Optional: Uncomment for debugging time
-
     // Temperature check
-    // Use logical OR (||) and comparison (==)
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
         GetTemp();
         lastTempCheck = currentMillis;
     }
 
-    // GPS check
     if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false) {
         checkGPS();
         lastGPSCheck = currentMillis;
     }
 
     // Weather check
-    // Check for timeout on weather request
-    // Note: The initSystem check here might need review. Do you always want to check timeout on init?
     if ((isRequestPending && currentMillis - requestStartTime >= REQUEST_TIMEOUT) || initSystem == false) {
         if (isRequestPending) { // Only print timeout if it actually was pending
            isRequestPending = false;
            Serial.println("Weather request timeout");
         }
-        // Consider if you need to trigger a new request here or just reset the flag
     }
-
-    // Trigger weather request if needed (moved this logic slightly for clarity)
     if (currentMillis - lastWeatherCheck >= WEATHER_INTERVAL || initSystem == false) {
-         if (!isRequestPending) { // Only start if not already pending
-             startWeatherRequest(); // Start the request
-             lastWeatherCheck = currentMillis; // Update check time when request *starts*
+         if (!isRequestPending) {
+             startWeatherRequest(); 
+             lastWeatherCheck = currentMillis; 
          }
     }
 
@@ -161,11 +152,8 @@ void loop() {
         sendData22();
         lastSentData = currentMillis;
     }
-    // Process any incoming serial data
     processSerial();
-
-    // Handle OTA updates
-    ArduinoOTA.handle(); // Make sure to call this in the loop for OTA to work
+    ArduinoOTA.handle(); 
 
     if (initSystem == false) {
         initSystem = true; // Set initSystem to true after the first pass
@@ -182,7 +170,7 @@ void startWeatherRequest() {
     String lonToUse = (gpsLong.length() > 0) ? gpsLong : defaultlong;
     sendRequest(lonToUse, latToUse);
 }
-    void processSerial() {
+void processSerial() {
         if (H87_Serial.available()) {
             String receivedData = H87_Serial.readStringUntil('\n');
             Serial.print("來自 HUB8735: ");
@@ -375,7 +363,11 @@ void sendData22() {
     Response response = fetch(serverUrl2, options);
     Serial.println("Sent: " + jsonString);
 
-    if (response.code = 200) {
+    if (response.status == 200) {
       Serial.println("Done :)");
+    } else {
+      Serial.println("Failed to send data");
+      Serial.println("Response status: " + String(response.status));
+      Serial.println("Response body: " + response.text());
     }
 }
