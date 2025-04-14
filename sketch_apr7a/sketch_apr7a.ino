@@ -130,14 +130,6 @@ void loop() {
           Serial.println("GPS");
     }
 
-    if (currentMillis - lastWeatherCheck >= WEATHER_INTERVAL || initSystem == false) {
-      Serial.println("Weather");
-         if (!isRequestPending) {
-             startWeatherRequest(); 
-             lastWeatherCheck = currentMillis; 
-         }
-    }
-
 
     // Power management
     if (currentMillis - lastPowerCheck >= POWER_INTERVAL || initSystem == false) {
@@ -179,12 +171,17 @@ void processSerial() {
 
 void checkGPS() {
     if (GPS_Serial.available()) {
+      Serial.println("GPS Serial is available");
       // WELP THIS IS A STUPID FUCKING FIX, IT IS JUST IN FRONT OF ME THIS ENTIRE TIME!!!!!1!!!
          if (GPS_Serial.available() > 0) {
+              Serial.println("GPS Serial is available x2");
             if (gps.encode(GPS_Serial.read())) {
+                  Serial.println("Reading GPS Serial");
                 getSignal();
             }
         }
+    } else {
+      Serial.println("GPS Serial is not available");
     }
 }
 
@@ -215,10 +212,13 @@ void getSignal() {
         gpsTime = String(gps.time.hour()) + ":" + 
                   String(gps.time.minute()) + ":" + 
                   String(gps.time.second());
-                  
+        
+        Serial.println("Weather");
         sendRequest(gpsLong, gpsLat);
     } else {
         Serial.println("Waiting for valid GPS data...");
+        Serial.println("Weather");
+        sendRequest(gpsLong, gpsLat);
     }
 }
 
@@ -253,13 +253,10 @@ void sendRequest(String lng, String lat) {
     if (error) {
       Serial.print("JSON parsing failed: ");
       Serial.println(error.c_str());
-      // Don't reset isRequestPending here on parse failure, maybe retry logic needed?
-      return; // Exit if parsing fails
+      return; 
     }
 
-    // Process and display the received data
     Serial.println("Weather data:");
-    // Use safer access methods
     if (doc.containsKey("temperature")) {
       Serial.print("Temperature: ");
       Serial.println(doc["temperature"].as<float>());
@@ -273,9 +270,8 @@ void sendRequest(String lng, String lat) {
       Serial.println(doc["weather"].as<String>());
     }
 
-    // Store data for later use if needed
-    data = response.text(); // Store the raw JSON string
-    isRequestPending = false; // Request successful and parsed (or attempted parse)
+    data = response.text();
+    isRequestPending = false;
   } else {
     Serial.println("Failed to get data");
     Serial.println("Response status: " + String(response.status));
