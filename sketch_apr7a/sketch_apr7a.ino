@@ -31,7 +31,7 @@ const unsigned long FETCH_INTERVAL = 60000;  // Weather data fetch interval (1 m
 const unsigned long RESPONSE_DELAY = 1000;   // Delay waiting for response
 // Task intervals
 const unsigned long TEMP_INTERVAL = 2000;      // 2 seconds
-const unsigned long GPS_INTERVAL = 3600000;     // 1 hour
+const unsigned long GPS_INTERVAL = 1000000;     // 1 hour
 const unsigned long WEATHER_INTERVAL = 300000;  // 5 minutes
 const unsigned long POWER_INTERVAL = 30000;     // 30 seconds
 const unsigned long SENDDATA_INTERVAL = 10000; // 10 seconds
@@ -116,25 +116,22 @@ void setup() {
 
 void loop() {
     unsigned long currentMillis = millis();
+    Serial.print("Loop; InitSystem: ");
+    Serial.println(initSystem);
     // Temperature check
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
         GetTemp();
         lastTempCheck = currentMillis;
     }
 
-    if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false) {
+    if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
         checkGPS();
         lastGPSCheck = currentMillis;
+          Serial.println("GPS");
     }
 
-    // Weather check
-    if ((isRequestPending && currentMillis - requestStartTime >= REQUEST_TIMEOUT) || initSystem == false) {
-        if (isRequestPending) { // Only print timeout if it actually was pending
-           isRequestPending = false;
-           Serial.println("Weather request timeout");
-        }
-    }
     if (currentMillis - lastWeatherCheck >= WEATHER_INTERVAL || initSystem == false) {
+      Serial.println("Weather");
          if (!isRequestPending) {
              startWeatherRequest(); 
              lastWeatherCheck = currentMillis; 
@@ -165,12 +162,14 @@ void startWeatherRequest() {
     // Removed the check from here, it's handled before calling now
     isRequestPending = true;
     requestStartTime = millis();
+    Serial.println(millis());
     // Use current GPS or defaults if GPS isn't valid yet
     String latToUse = (gpsLat.length() > 0) ? gpsLat : defaultlat;
     String lonToUse = (gpsLong.length() > 0) ? gpsLong : defaultlong;
     sendRequest(lonToUse, latToUse);
 }
 void processSerial() {
+    Serial.println(millis());
         if (H87_Serial.available()) {
             String receivedData = H87_Serial.readStringUntil('\n');
             Serial.print("來自 HUB8735: ");
@@ -180,7 +179,8 @@ void processSerial() {
 
 void checkGPS() {
     if (GPS_Serial.available()) {
-        while (GPS_Serial.available() > 0) {
+      // WELP THIS IS A STUPID FUCKING FIX, IT IS JUST IN FRONT OF ME THIS ENTIRE TIME!!!!!1!!!
+         if (GPS_Serial.available() > 0) {
             if (gps.encode(GPS_Serial.read())) {
                 getSignal();
             }
@@ -189,6 +189,8 @@ void checkGPS() {
 }
 
 void getSignal() {
+    Serial.println(gps.location.isValid());
+    Serial.println(gps.location.lng());
     if (gps.location.isValid()) {
         Serial.println("GPS Data Updated:");
         Serial.print("經度: ");
@@ -207,13 +209,13 @@ void getSignal() {
         Serial.println(gps.time.second());
         
         // Update global GPS variables
-        gpsLat = String(gps.location.lat(), 6);
-        gpsLong = String(gps.location.lng(), 6);
+        gpsLat = String(gps.location.lat());
+        gpsLong = String(gps.location.lng());
+        Serial.println(gpsLat + "  " + gpsLong);
         gpsTime = String(gps.time.hour()) + ":" + 
                   String(gps.time.minute()) + ":" + 
                   String(gps.time.second());
                   
-        // Get weather data with new coordinates
         sendRequest(gpsLong, gpsLat);
     } else {
         Serial.println("Waiting for valid GPS data...");
@@ -224,6 +226,16 @@ void sendRequest(String lng, String lat) {
   RequestOptions options;
   options.method = "GET";
   // No need for default checks here if handled in startWeatherRequest
+  
+  if (lat.length() > 0) {} else {
+    Serial.println("No lat");
+    lat = defaultlat;
+  }
+  if (lng.length() > 0) {} else {
+    Serial.println("No long");
+    lng = defaultlong;
+  }
+  
   String serverUrl = serverUrl1 + lat + "/" + lng;
 
   Serial.println("Requesting weather data from: " + serverUrl);
@@ -313,33 +325,24 @@ void sendData22() {
     Serial.println("Current weather data: " + data);
 
     // Check if we need to fetch new data
-    if (data.length() == 0 || millis() - lastFetchTime >= FETCH_INTERVAL) {
+    if (data.length() == 0) {
         Serial.println("Fetching new weather data...");
         sendRequest(defaultlong, defaultlat);
         delay(RESPONSE_DELAY);
         lastFetchTime = millis();
-        return;
     }
 
     // Parse weather data
     DynamicJsonDocument weatherData(2048);
     DeserializationError error = deserializeJson(weatherData, data);
 
-    if (error) {
-        Serial.println("Error parsing weather data: " + String(error.c_str()));
-        Serial.println("Retrying data fetch...");
-        sendRequest(defaultlong, defaultlat);
-        delay(RESPONSE_DELAY);
-        return;
-    }
-    // Rest of the existing code remains the same
     DynamicJsonDocument doc(2048);
-        doc["cwa_type"] = "雲";
-        doc["cwa_location"] = " 新北市";
-        doc["cwa_temp"] = 25.5;
-        doc["cwa_hum"] = 60;
-        doc["cwa_daliyHigh"] = 26;
-        doc["cwa_daliyLow"] = 15;
+        doc["cwa_type"] = weatherData["weather"] | "晴";
+        doc["cwa_location"] = weatherData["location"] | "臺北市士林區";
+        doc["cwa_temp"] = weatherData["temprature"] | 27.7;
+        doc["cwa_hum"] = weatherData["humidity"]| 60;
+        doc["cwa_daliyHigh"] = weatherData["daliyHigh"] | 26;
+        doc["cwa_daliyLow"] = weatherData["daliyLow"] | 15;
     doc["local_temp"] = dht_sensor.readTemperature();
     doc["local_hum"] = dht_sensor.readHumidity();
     doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
