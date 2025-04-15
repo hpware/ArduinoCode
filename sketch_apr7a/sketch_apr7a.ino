@@ -5,18 +5,20 @@
 #include <DHT.h>
 #include <Wire.h>
 #include <WiFi.h>
-#include <ArduinoOTA.h>
+
 #define DHT_SENSOR_PIN 21
 #define DHT_SENSOR_TYPE DHT11
 #define JIPOWER_PIN 22
 
+// 設定紅外線 PIN 與 地址
 #define I2C_SDA_PIN 25 
 #define I2C_SCL_PIN 33
 #define OTI602_ADDR 0x10 
-// WIFI 密碼
-const char *ssid = "a";
-const char *password = "pi!=7.188";
-// API 連結
+
+// WiFi 設定
+const char *ssid = "hel";
+const char *password = "1234567890";
+// API 網址
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
 const char *serverUrl2 = "https://hpg7.sch2.top/logger/store";
 String data = "";
@@ -24,7 +26,6 @@ bool sendData = false;
 bool isJiPowerOn = false;
 bool initJiPower  = true;
 int JipowerTime = 0;
-// 預設經緯度
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
 String gpsLat = "";
@@ -51,12 +52,6 @@ bool initSystem = false;
 String receivedItem = "";
 float oti602AmbientTemp = 0.0;
 float oti602ObjectTemp = 0.0;
-const unsigned long INTERVAL_OTI = 1000;    // OTI602 reading interval
-const unsigned long INTERVAL_GPS = 1000;    // GPS reading interval
-const unsigned long INTERVAL_SEND = 5000;   // Data sending interval
-unsigned long lastOTIRead = 0;
-unsigned long lastGPSRead = 0;
-unsigned long lastDataSend = 0;
 
 #define MAX_ARRAY_SIZE 10
 String receivedArray[MAX_ARRAY_SIZE];
@@ -91,101 +86,35 @@ void setup() {
   Serial.print(I2C_SDA_PIN);
   Serial.print(", SCL=");
   Serial.println(I2C_SCL_PIN);
-
-  // OTA
-  if (WiFi.status() == WL_CONNECTED) {
-    ArduinoOTA.setPort(3232);
-    ArduinoOTA.setHostname("fsdfgf");
-    ArduinoOTA.setPassword("esp32");
-    ArduinoOTA.onStart([]() {
-                String type;
-                if (ArduinoOTA.getCommand() == U_FLASH) {
-                  type = "sketch";
-                } else {
-                  type = "filesystem";
-                }
-                Serial.println("Updaing content...");
-              })
-      .onEnd([]() {
-        Serial.println("\nEnd");
-      })
-      .onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("Progress: %u$$\r", (progress / (total / 100)));
-      })
-      .onError([](ota_error_t error) {
-        Serial.printf("Error[%u]: ", error);
-        if (error == OTA_AUTH_ERROR) {
-          Serial.println("Auth Failed");
-        } else if (error == OTA_BEGIN_ERROR) {
-          Serial.println("Begin Failed");
-        } else if (error == OTA_CONNECT_ERROR) {
-          Serial.println("Connect Failed");
-        } else if (error == OTA_RECEIVE_ERROR) {
-          Serial.println("Receive Failed");
-        } else if (error == OTA_END_ERROR) {
-          Serial.println("End Failed");
-        }
-      });
-    ArduinoOTA.begin();
-  }
 }
+
 void loop() {
     unsigned long currentMillis = millis();
-    
-    // Handle each task independently
-    checkGPS();
-    ReadOTI602Temp();
-    handleDataOperations();
-    processSerial();
-    ArduinoOTA.handle();
-    
-    // Reset initSystem after first complete cycle
-    if (!initSystem) {
-        initSystem = true;
+    Serial.print("Loop; InitSystem: ");
+    Serial.println(initSystem);
+    // Temperature check
+    if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
+        GetTemp();
+        lastTempCheck = currentMillis;
     }
-}
-enum DataState {
-    IDLE,
-    FETCHING_WEATHER,
-    SENDING_DATA,
-    WAITING_RESPONSE
-};
 
-DataState currentState = IDLE;
-unsigned long stateTimer = 0;
+    if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
+        checkGPS();
+        lastGPSCheck = currentMillis;
+          Serial.println("GPS");
+    }
 
-void handleDataOperations() {
-    unsigned long currentMillis = millis();
-    
-    switch(currentState) {
-        case IDLE:
-            if (currentMillis - lastDataSend >= INTERVAL_SEND) {
-                currentState = FETCHING_WEATHER;
-                stateTimer = currentMillis;
-            }
-            break;
-            
-        case FETCHING_WEATHER:
-            if (data.length() == 0) {
-                sendRequest(defaultlong, defaultlat);
-                currentState = WAITING_RESPONSE;
-                stateTimer = currentMillis;
-            } else {
-                currentState = SENDING_DATA;
-            }
-            break;
-            
-        case WAITING_RESPONSE:
-            if (currentMillis - stateTimer >= RESPONSE_DELAY) {
-                currentState = SENDING_DATA;
-            }
-            break;
-            
-        case SENDING_DATA:
-            sendData22();
-            lastDataSend = currentMillis;
-            currentState = IDLE;
-            break;
+    if (currentMillis - lastSentData >= SENDDATA_INTERVAL || initSystem == false) {
+        sendData22();
+        lastSentData = currentMillis;
+    }
+
+    ReadOTI602Temp();
+    processSerial();
+
+    if (initSystem == false) {
+        initSystem = true; // Set initSystem to true after the first pass
+        Serial.println("Initial system checks complete.");
     }
 }
 
@@ -388,22 +317,8 @@ void GetTemp() {
   Serial.println(temp);
 }
 
-void SetJiPower() {
-  if (isJiPowerOn == false && JipowerTime == 30 || initJiPower == false) {
-    digitalWrite(JIPOWER_PIN, HIGH);
-    isJiPowerOn = true;
-    JipowerTime = 0;
-    initJiPower = true;
-  }
-  if (isJiPowerOn == true && JipowerTime == 30) {
-      digitalWrite(JIPOWER_PIN, LOW);
-      JipowerTime = 0;
-      isJiPowerOn = false;
-  }
-    JipowerTime += 1;
-    Serial.println(JipowerTime);
-}
 
+// 傳資料給伺服器並把繼電器的設定也從伺服器拉下來
 void sendData22() {
       Serial.println("Starting sendData22...");
 
@@ -421,6 +336,7 @@ void sendData22() {
     if (data.length() == 0) {
         Serial.println("Fetching new weather data...");
         sendRequest(defaultlong, defaultlat);
+        delay(RESPONSE_DELAY);
         lastFetchTime = millis();
     }
 
@@ -462,12 +378,10 @@ void sendData22() {
       Serial.println("Done :)");
       String responseText = response.text();
       
-      // Parse JSON response
       StaticJsonDocument<200> responseDoc;
       DeserializationError error = deserializeJson(responseDoc, responseText);
       
       if (!error) {
-        // Check power control flag from server
         bool powerState = responseDoc["jistatus"];
         if (powerState == true) {
           digitalWrite(JIPOWER_PIN, HIGH);
