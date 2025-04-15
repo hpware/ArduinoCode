@@ -16,8 +16,8 @@
 
 const char *ssid = "a";
 const char *password = "pi!=7.188";
-const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
-const char *serverUrl2 = "https://edu.yhw.tw/logger/store";
+const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
+const char *serverUrl2 = "https://hpg7.sch2.top/logger/store";
 String data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
@@ -46,6 +46,9 @@ bool isRequestPending = false;
 unsigned long requestStartTime = 0;
 const unsigned long REQUEST_TIMEOUT = 10000;
 bool initSystem = false;
+float oti602AmbientTemp = 0.0; 
+float oti602ObjectTemp = 0.0;
+String receivedItem = "";
 
 #define MAX_ARRAY_SIZE 10
 String receivedArray[MAX_ARRAY_SIZE];
@@ -131,12 +134,6 @@ void loop() {
         lastTempCheck = currentMillis;
     }
 
-
-    if (currentMillis - lastOTI602Check >= OTI602_INTERVAL || !initSystem) {
-      ReadOTI602Temp();
-      lastOTI602Check = currentMillis;
-    }
-
     if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
         checkGPS();
         lastGPSCheck = currentMillis;
@@ -154,6 +151,8 @@ void loop() {
         sendData22();
         lastSentData = currentMillis;
     }
+
+    ReadOTI602Temp();
     processSerial();
     ArduinoOTA.handle(); 
 
@@ -175,44 +174,13 @@ void startWeatherRequest() {
 }
 void processSerial() {
     Serial.println(millis());
+      
         if (H87_Serial.available()) {
             String receivedData = H87_Serial.readStringUntil('\n');
             Serial.print("來自 HUB8735: ");
-            Serial.println(receivedData);
-                    
-        // Split the received data into array
-        int arrayIndex = 0;
-        int prevIndex = 0;
-        int commaIndex = receivedData.indexOf(',');
-        
-        // Clear previous array contents
-        for(int i = 0; i < MAX_ARRAY_SIZE; i++) {
-            receivedArray[i] = "";
-        }
-        
-        // Split string by comma
-        while(commaIndex >= 0 && arrayIndex < MAX_ARRAY_SIZE) {
-            receivedArray[arrayIndex] = receivedData.substring(prevIndex, commaIndex);
-            prevIndex = commaIndex + 1;
-            commaIndex = receivedData.indexOf(',', prevIndex);
-            arrayIndex++;
-        }
-        // Add the last part
-        if(arrayIndex < MAX_ARRAY_SIZE) {
-            receivedArray[arrayIndex] = receivedData.substring(prevIndex);
-        }
-        
-        checkStuff(receivedArray);
+            receivedItem = receivedData;
     }
 }
-
-void checkStuff(String received[]) {
-  Serial.println(received[0]);
-  Serial.println(received[1]);
-  Serial.println(received[2]);
-
-}
-
 void checkGPS() {
     if (GPS_Serial.available()) {
       Serial.println("GPS Serial is available");
@@ -229,60 +197,59 @@ void checkGPS() {
     }
 }
 
-// Reads OTI602 Temperatures via I2C
-bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
-  byte i2cData[6];
-
-  // Send read command (0x80)
+bool readTemperatures(float *ambientTemp, float *objectTemp) {
+  byte data[6];
+  
+  // 步驟1和2: 發送寫地址和讀取指令
   Wire.beginTransmission(OTI602_ADDR);
-  Wire.write(0x80);
+  Wire.write(0x80);  // 讀取指令
   byte error = Wire.endTransmission();
-
+  
   if (error != 0) {
-    Serial.print("OTI602: Error sending read command: ");
+    Serial.print("發送讀取指令錯誤: ");
     Serial.println(error);
     return false;
   }
-
-  // Request 6 bytes of data
+  
+  // 步驟3和4: 讀取數據
+  // Arduino的Wire庫在requestFrom中自動處理重複開始條件和讀取位址
   byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
-
+  
+  Serial.print("接收到的數據量: ");
+  Serial.println(bytesReceived);
+  
   if (bytesReceived != 6) {
-    Serial.print("OTI602: Error receiving data. Expected 6, got: ");
-    Serial.println(bytesReceived);
-    // Clear buffer if partial data received
-    while (Wire.available()) {
-      Wire.read();
-    }
     return false;
   }
-
-  // Read the 6 bytes
+  
+  // 讀取6個位元組
   for (int i = 0; i < 6; i++) {
     if (Wire.available()) {
-      i2cData[i] = Wire.read();
+      data[i] = Wire.read();
+      Serial.print("數據[");
+      Serial.print(i);
+      Serial.print("]: 0x");
+      Serial.println(data[i], HEX);
     } else {
-      Serial.println("OTI602: Error reading byte during data reception.");
+      Serial.println("讀取數據時發生錯誤");
       return false;
     }
   }
-
-  // Calculate Ambient Temperature (first 3 bytes, LSB first)
-  int32_t rawAmbient = i2cData[0] | (i2cData[1] << 8) | (i2cData[2] << 16);
-  // Sign extend if negative (check MSB of the 24 bits)
-  if (i2cData[2] & 0x80) {
-    rawAmbient |= 0xFF000000;
+  
+  // 計算環境溫度 (前3個位元組)
+  int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
+  if (data[2] >= 0x80) {
+    rawAmbient -= 0x1000000;  // 處理負溫度
   }
   *ambientTemp = rawAmbient / 200.0f;
-
-  // Calculate Object Temperature (last 3 bytes, LSB first)
-  int32_t rawObject = i2cData[3] | (i2cData[4] << 8) | (i2cData[5] << 16);
-  // Sign extend if negative
-  if (i2cData[5] & 0x80) {
-    rawObject |= 0xFF000000;
+  
+  // 計算物體溫度 (後3個位元組)
+  int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
+  if (data[5] >= 0x80) {
+    rawObject -= 0x1000000;  // 處理負溫度
   }
   *objectTemp = rawObject / 200.0f;
-
+  
   return true;
 }
 
