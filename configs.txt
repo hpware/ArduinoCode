@@ -1,2 +1,3 @@
 https://dl.espressif.com/dl/package_esp32_index.json
 https://mcu.holtek.com.tw/arduino/ht32/package_ht32_index.json
+https://raw.githubusercontent.com/ideashatch/HUB-8735/main/amebapro2_arduino/Arduino_package/ideasHatch.json
