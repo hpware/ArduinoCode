@@ -13,9 +13,10 @@
 #define I2C_SDA_PIN 25 
 #define I2C_SCL_PIN 33
 #define OTI602_ADDR 0x10 
-
+// WIFI 密碼
 const char *ssid = "a";
 const char *password = "pi!=7.188";
+// API 連結
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
 const char *serverUrl2 = "https://hpg7.sch2.top/logger/store";
 String data = "";
@@ -23,6 +24,7 @@ bool sendData = false;
 bool isJiPowerOn = false;
 bool initJiPower  = true;
 int JipowerTime = 0;
+// 預設經緯度
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
 String gpsLat = "";
@@ -49,6 +51,12 @@ bool initSystem = false;
 String receivedItem = "";
 float oti602AmbientTemp = 0.0;
 float oti602ObjectTemp = 0.0;
+const unsigned long INTERVAL_OTI = 1000;    // OTI602 reading interval
+const unsigned long INTERVAL_GPS = 1000;    // GPS reading interval
+const unsigned long INTERVAL_SEND = 5000;   // Data sending interval
+unsigned long lastOTIRead = 0;
+unsigned long lastGPSRead = 0;
+unsigned long lastDataSend = 0;
 
 #define MAX_ARRAY_SIZE 10
 String receivedArray[MAX_ARRAY_SIZE];
@@ -120,37 +128,64 @@ void setup() {
       });
     ArduinoOTA.begin();
   }
-  delay(3000);
 }
-
 void loop() {
     unsigned long currentMillis = millis();
-    Serial.print("Loop; InitSystem: ");
-    Serial.println(initSystem);
-    // Temperature check
-    if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
-        GetTemp();
-        lastTempCheck = currentMillis;
-    }
-
-    if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
-        checkGPS();
-        lastGPSCheck = currentMillis;
-          Serial.println("GPS");
-    }
-
-    if (currentMillis - lastSentData >= SENDDATA_INTERVAL || initSystem == false) {
-        sendData22();
-        lastSentData = currentMillis;
-    }
-
+    
+    // Handle each task independently
+    checkGPS();
     ReadOTI602Temp();
+    handleDataOperations();
     processSerial();
-    ArduinoOTA.handle(); 
+    ArduinoOTA.handle();
+    
+    // Reset initSystem after first complete cycle
+    if (!initSystem) {
+        initSystem = true;
+    }
+}
+enum DataState {
+    IDLE,
+    FETCHING_WEATHER,
+    SENDING_DATA,
+    WAITING_RESPONSE
+};
 
-    if (initSystem == false) {
-        initSystem = true; // Set initSystem to true after the first pass
-        Serial.println("Initial system checks complete.");
+DataState currentState = IDLE;
+unsigned long stateTimer = 0;
+
+void handleDataOperations() {
+    unsigned long currentMillis = millis();
+    
+    switch(currentState) {
+        case IDLE:
+            if (currentMillis - lastDataSend >= INTERVAL_SEND) {
+                currentState = FETCHING_WEATHER;
+                stateTimer = currentMillis;
+            }
+            break;
+            
+        case FETCHING_WEATHER:
+            if (data.length() == 0) {
+                sendRequest(defaultlong, defaultlat);
+                currentState = WAITING_RESPONSE;
+                stateTimer = currentMillis;
+            } else {
+                currentState = SENDING_DATA;
+            }
+            break;
+            
+        case WAITING_RESPONSE:
+            if (currentMillis - stateTimer >= RESPONSE_DELAY) {
+                currentState = SENDING_DATA;
+            }
+            break;
+            
+        case SENDING_DATA:
+            sendData22();
+            lastDataSend = currentMillis;
+            currentState = IDLE;
+            break;
     }
 }
 
@@ -386,7 +421,6 @@ void sendData22() {
     if (data.length() == 0) {
         Serial.println("Fetching new weather data...");
         sendRequest(defaultlong, defaultlat);
-        delay(RESPONSE_DELAY);
         lastFetchTime = millis();
     }
 
