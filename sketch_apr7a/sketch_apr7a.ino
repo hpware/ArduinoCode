@@ -34,9 +34,9 @@ const unsigned long FETCH_INTERVAL = 60000;
 const unsigned long RESPONSE_DELAY = 1000; 
 const unsigned long TEMP_INTERVAL = 2000;
 const unsigned long GPS_INTERVAL = 1000000;
-const unsigned long WEATHER_INTERVAL = 300000;
-const unsigned long POWER_INTERVAL = 30000;
+const unsigned long WEATHER_INTERVAL = 30000;
 const unsigned long SENDDATA_INTERVAL = 10000;
+const unsigned long POWER_INTERVAL = 300000;
 unsigned long lastTempCheck = 0;
 unsigned long lastGPSCheck = 0;
 unsigned long lastWeatherCheck = 0;
@@ -46,9 +46,9 @@ bool isRequestPending = false;
 unsigned long requestStartTime = 0;
 const unsigned long REQUEST_TIMEOUT = 10000;
 bool initSystem = false;
-float oti602AmbientTemp = 0.0; 
-float oti602ObjectTemp = 0.0;
 String receivedItem = "";
+float oti602AmbientTemp = 0.0;
+float oti602ObjectTemp = 0.0;
 
 #define MAX_ARRAY_SIZE 10
 String receivedArray[MAX_ARRAY_SIZE];
@@ -77,7 +77,6 @@ void setup() {
   dht_sensor.begin();
   pinMode(JIPOWER_PIN, OUTPUT);
   digitalWrite(JIPOWER_PIN, LOW);
-  SetJiPower();
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000); // 100kHz
   Serial.print("I2C Initialized for OTI602 on SDA=");
@@ -140,13 +139,6 @@ void loop() {
           Serial.println("GPS");
     }
 
-
-    // Power management
-    if (currentMillis - lastPowerCheck >= POWER_INTERVAL || initSystem == false) {
-        SetJiPower();
-        lastPowerCheck = currentMillis;
-    }
-
     if (currentMillis - lastSentData >= SENDDATA_INTERVAL || initSystem == false) {
         sendData22();
         lastSentData = currentMillis;
@@ -197,58 +189,40 @@ void checkGPS() {
     }
 }
 
-bool readTemperatures(float *ambientTemp, float *objectTemp) {
-  byte data[6];
-  
-  // 步驟1和2: 發送寫地址和讀取指令
-  Wire.beginTransmission(OTI602_ADDR);
-  Wire.write(0x80);  // 讀取指令
-  byte error = Wire.endTransmission();
-  
-  if (error != 0) {
-    Serial.print("發送讀取指令錯誤: ");
-    Serial.println(error);
+
+// Add this function implementation before setup()
+bool readOTI602Temperatures(float* ambient, float* object) {
+  Wire.beginTransmission(0x5A); // OTI602 I2C address
+  Wire.write(0x06); // Command for ambient temperature
+  if (Wire.endTransmission() != 0) {
     return false;
   }
   
-  // 步驟3和4: 讀取數據
-  // Arduino的Wire庫在requestFrom中自動處理重複開始條件和讀取位址
-  byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
+  delay(100);
   
-  Serial.print("接收到的數據量: ");
-  Serial.println(bytesReceived);
-  
-  if (bytesReceived != 6) {
+  if (Wire.requestFrom(0x5A, 2) != 2) {
     return false;
   }
   
-  // 讀取6個位元組
-  for (int i = 0; i < 6; i++) {
-    if (Wire.available()) {
-      data[i] = Wire.read();
-      Serial.print("數據[");
-      Serial.print(i);
-      Serial.print("]: 0x");
-      Serial.println(data[i], HEX);
-    } else {
-      Serial.println("讀取數據時發生錯誤");
-      return false;
-    }
+  uint16_t ambientRaw = Wire.read();
+  ambientRaw |= Wire.read() << 8;
+  *ambient = ambientRaw * 0.02 - 273.15;
+  
+  Wire.beginTransmission(0x5A);
+  Wire.write(0x07); // Command for object temperature
+  if (Wire.endTransmission() != 0) {
+    return false;
   }
   
-  // 計算環境溫度 (前3個位元組)
-  int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
-  if (data[2] >= 0x80) {
-    rawAmbient -= 0x1000000;  // 處理負溫度
-  }
-  *ambientTemp = rawAmbient / 200.0f;
+  delay(100);
   
-  // 計算物體溫度 (後3個位元組)
-  int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
-  if (data[5] >= 0x80) {
-    rawObject -= 0x1000000;  // 處理負溫度
+  if (Wire.requestFrom(0x5A, 2) != 2) {
+    return false;
   }
-  *objectTemp = rawObject / 200.0f;
+  
+  uint16_t objectRaw = Wire.read();
+  objectRaw |= Wire.read() << 8;
+  *object = objectRaw * 0.02 - 273.15;
   
   return true;
 }
@@ -266,6 +240,9 @@ void ReadOTI602Temp() {
     // Optionally set temps to NaN or a specific error value
     oti602AmbientTemp = NAN;
     oti602ObjectTemp = NAN;
+  }
+  if (oti602AmbientTemp == oti602ObjectTemp) {
+    H87_Serial.println("GO");
   }
 }
 
@@ -449,6 +426,30 @@ void sendData22() {
 
     if (response.status == 200) {
       Serial.println("Done :)");
+      String responseText = response.text();
+      
+      // Parse JSON response
+      StaticJsonDocument<200> responseDoc;
+      DeserializationError error = deserializeJson(responseDoc, responseText);
+      
+      if (!error) {
+        // Check power control flag from server
+        bool powerState = responseDoc["jistatus"];
+        if (powerState == true) {
+          digitalWrite(JIPOWER_PIN, HIGH);
+          isJiPowerOn = true;
+          Serial.println("Power ON requested by server");
+        } else if (powerState == false) {
+          digitalWrite(JIPOWER_PIN, LOW);
+          isJiPowerOn = false;
+          Serial.println("Power OFF requested by server");
+        } else {
+          Serial.println("Oops");
+        }
+      } else {
+        Serial.print("JSON parse error: ");
+        Serial.println(error.c_str());
+      }
     } else {
       Serial.println("Failed to send data");
       Serial.println("Response status: " + String(response.status));
