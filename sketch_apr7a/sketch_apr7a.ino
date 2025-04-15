@@ -2,14 +2,17 @@
 #include <HardwareSerial.h>
 #include "Fetch.h"
 #include <ArduinoJson.h>
-#include <SD.h>
-#include <SPI.h>
 #include <DHT.h>
+#include <Wire.h>
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #define DHT_SENSOR_PIN 21
 #define DHT_SENSOR_TYPE DHT11
 #define JIPOWER_PIN 22
+
+#define I2C_SDA_PIN 25 
+#define I2C_SCL_PIN 33
+#define OTI602_ADDR 0x10 
 
 const char *ssid = "a";
 const char *password = "pi!=7.188";
@@ -26,29 +29,26 @@ String gpsLat = "";
 String gpsLong = "";
 String gpsTime = "";
 bool shouldSendData = false;
-const unsigned long JI_POWER_INTERVAL = 30;  // Power cycle interval
-const unsigned long FETCH_INTERVAL = 60000;  // Weather data fetch interval (1 minute)
-const unsigned long RESPONSE_DELAY = 1000;   // Delay waiting for response
-// Task intervals
-const unsigned long TEMP_INTERVAL = 2000;      // 2 seconds
-const unsigned long GPS_INTERVAL = 1000000;     // 1 hour
-const unsigned long WEATHER_INTERVAL = 300000;  // 5 minutes
-const unsigned long POWER_INTERVAL = 30000;     // 30 seconds
-const unsigned long SENDDATA_INTERVAL = 10000; // 10 seconds
-
-// Task timers
+const unsigned long JI_POWER_INTERVAL = 30;
+const unsigned long FETCH_INTERVAL = 60000;
+const unsigned long RESPONSE_DELAY = 1000; 
+const unsigned long TEMP_INTERVAL = 2000;
+const unsigned long GPS_INTERVAL = 1000000;
+const unsigned long WEATHER_INTERVAL = 300000;
+const unsigned long POWER_INTERVAL = 30000;
+const unsigned long SENDDATA_INTERVAL = 10000;
 unsigned long lastTempCheck = 0;
 unsigned long lastGPSCheck = 0;
 unsigned long lastWeatherCheck = 0;
 unsigned long lastPowerCheck = 0;
 unsigned long lastSentData = 0;
-
-// State flags
 bool isRequestPending = false;
 unsigned long requestStartTime = 0;
-const unsigned long REQUEST_TIMEOUT = 10000; // 10 second timeout
+const unsigned long REQUEST_TIMEOUT = 10000;
 bool initSystem = false;
 
+#define MAX_ARRAY_SIZE 10
+String receivedArray[MAX_ARRAY_SIZE];
 
 TinyGPSPlus gps;
 HardwareSerial GPS_Serial(1);
@@ -75,6 +75,13 @@ void setup() {
   pinMode(JIPOWER_PIN, OUTPUT);
   digitalWrite(JIPOWER_PIN, LOW);
   SetJiPower();
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(100000); // 100kHz
+  Serial.print("I2C Initialized for OTI602 on SDA=");
+  Serial.print(I2C_SDA_PIN);
+  Serial.print(", SCL=");
+  Serial.println(I2C_SCL_PIN);
+
   // OTA
   if (WiFi.status() == WL_CONNECTED) {
     ArduinoOTA.setPort(3232);
@@ -124,6 +131,12 @@ void loop() {
         lastTempCheck = currentMillis;
     }
 
+
+    if (currentMillis - lastOTI602Check >= OTI602_INTERVAL || !initSystem) {
+      ReadOTI602Temp();
+      lastOTI602Check = currentMillis;
+    }
+
     if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
         checkGPS();
         lastGPSCheck = currentMillis;
@@ -166,7 +179,38 @@ void processSerial() {
             String receivedData = H87_Serial.readStringUntil('\n');
             Serial.print("來自 HUB8735: ");
             Serial.println(receivedData);
+                    
+        // Split the received data into array
+        int arrayIndex = 0;
+        int prevIndex = 0;
+        int commaIndex = receivedData.indexOf(',');
+        
+        // Clear previous array contents
+        for(int i = 0; i < MAX_ARRAY_SIZE; i++) {
+            receivedArray[i] = "";
+        }
+        
+        // Split string by comma
+        while(commaIndex >= 0 && arrayIndex < MAX_ARRAY_SIZE) {
+            receivedArray[arrayIndex] = receivedData.substring(prevIndex, commaIndex);
+            prevIndex = commaIndex + 1;
+            commaIndex = receivedData.indexOf(',', prevIndex);
+            arrayIndex++;
+        }
+        // Add the last part
+        if(arrayIndex < MAX_ARRAY_SIZE) {
+            receivedArray[arrayIndex] = receivedData.substring(prevIndex);
+        }
+        
+        checkStuff(receivedArray);
     }
+}
+
+void checkStuff(String received[]) {
+  Serial.println(received[0]);
+  Serial.println(received[1]);
+  Serial.println(received[2]);
+
 }
 
 void checkGPS() {
@@ -184,6 +228,80 @@ void checkGPS() {
       Serial.println("GPS Serial is not available");
     }
 }
+
+// Reads OTI602 Temperatures via I2C
+bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
+  byte i2cData[6];
+
+  // Send read command (0x80)
+  Wire.beginTransmission(OTI602_ADDR);
+  Wire.write(0x80);
+  byte error = Wire.endTransmission();
+
+  if (error != 0) {
+    Serial.print("OTI602: Error sending read command: ");
+    Serial.println(error);
+    return false;
+  }
+
+  // Request 6 bytes of data
+  byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
+
+  if (bytesReceived != 6) {
+    Serial.print("OTI602: Error receiving data. Expected 6, got: ");
+    Serial.println(bytesReceived);
+    // Clear buffer if partial data received
+    while (Wire.available()) {
+      Wire.read();
+    }
+    return false;
+  }
+
+  // Read the 6 bytes
+  for (int i = 0; i < 6; i++) {
+    if (Wire.available()) {
+      i2cData[i] = Wire.read();
+    } else {
+      Serial.println("OTI602: Error reading byte during data reception.");
+      return false;
+    }
+  }
+
+  // Calculate Ambient Temperature (first 3 bytes, LSB first)
+  int32_t rawAmbient = i2cData[0] | (i2cData[1] << 8) | (i2cData[2] << 16);
+  // Sign extend if negative (check MSB of the 24 bits)
+  if (i2cData[2] & 0x80) {
+    rawAmbient |= 0xFF000000;
+  }
+  *ambientTemp = rawAmbient / 200.0f;
+
+  // Calculate Object Temperature (last 3 bytes, LSB first)
+  int32_t rawObject = i2cData[3] | (i2cData[4] << 8) | (i2cData[5] << 16);
+  // Sign extend if negative
+  if (i2cData[5] & 0x80) {
+    rawObject |= 0xFF000000;
+  }
+  *objectTemp = rawObject / 200.0f;
+
+  return true;
+}
+
+// Wrapper function to read and print OTI602 data
+void ReadOTI602Temp() {
+  if (readOTI602Temperatures(&oti602AmbientTemp, &oti602ObjectTemp)) {
+    Serial.print("OTI602 Sensor -> Ambient: ");
+    Serial.print(oti602AmbientTemp, 2);
+    Serial.print(" *C, Object: ");
+    Serial.print(oti602ObjectTemp, 2);
+    Serial.println(" *C");
+  } else {
+    Serial.println("Failed to read from OTI602 sensor!");
+    // Optionally set temps to NaN or a specific error value
+    oti602AmbientTemp = NAN;
+    oti602ObjectTemp = NAN;
+  }
+}
+
 
 void getSignal() {
     Serial.println(gps.location.isValid());
