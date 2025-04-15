@@ -26,41 +26,42 @@ bool sendData = false;
 bool isJiPowerOn = false;
 bool initJiPower  = true;
 int JipowerTime = 0;
+// 預設 GPS
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
+// GPS
 String gpsLat = "";
 String gpsLong = "";
 String gpsTime = "";
 bool shouldSendData = false;
-const unsigned long JI_POWER_INTERVAL = 30;
+
 const unsigned long FETCH_INTERVAL = 60000;
-const unsigned long RESPONSE_DELAY = 1000; 
 const unsigned long TEMP_INTERVAL = 2000;
 const unsigned long GPS_INTERVAL = 1000000;
 const unsigned long WEATHER_INTERVAL = 30000;
 const unsigned long SENDDATA_INTERVAL = 10000;
-const unsigned long POWER_INTERVAL = 300000;
+
 unsigned long lastTempCheck = 0;
 unsigned long lastGPSCheck = 0;
 unsigned long lastWeatherCheck = 0;
-unsigned long lastPowerCheck = 0;
 unsigned long lastSentData = 0;
+
 bool isRequestPending = false;
 unsigned long requestStartTime = 0;
 const unsigned long REQUEST_TIMEOUT = 10000;
+
 bool initSystem = false;
+
 String receivedItem = "";
+
 float oti602AmbientTemp = 0.0;
 float oti602ObjectTemp = 0.0;
 
-#define MAX_ARRAY_SIZE 10
-String receivedArray[MAX_ARRAY_SIZE];
+TinyGPSPlus gps; // GPS 程式初始化
+HardwareSerial GPS_Serial(1); // GPS 連接
+HardwareSerial H87_Serial(2); // 8735 連接
 
-TinyGPSPlus gps;
-HardwareSerial GPS_Serial(1);
-HardwareSerial H87_Serial(2);
-
-DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
+DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE); // 初始化溫度感應器
 void setup() {
   Serial.begin(115200);
   GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
@@ -88,59 +89,46 @@ void setup() {
   Serial.println(I2C_SCL_PIN);
 }
 
+/**
+ * 問題:
+ * API 要資訊要非常久
+ * 還有 IR 沒有資訊
+ */
 void loop() {
     unsigned long currentMillis = millis();
-    Serial.print("Loop; InitSystem: ");
-    Serial.println(initSystem);
     // Temperature check
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
-        GetTemp();
+        GetTemp(); 
         lastTempCheck = currentMillis;
     }
-
     if (currentMillis - lastGPSCheck >= GPS_INTERVAL || initSystem == false || gpsLat.length() == 0 || gpsLong.length() == 0) {
         checkGPS();
         lastGPSCheck = currentMillis;
           Serial.println("GPS");
     }
-
     if (currentMillis - lastSentData >= SENDDATA_INTERVAL || initSystem == false) {
         sendData22();
         lastSentData = currentMillis;
     }
-
     ReadOTI602Temp();
     processSerial();
 
     if (initSystem == false) {
-        initSystem = true; // Set initSystem to true after the first pass
+        initSystem = true; // 在開機時把所有程式都跑一遍
         Serial.println("Initial system checks complete.");
     }
 }
 
-void startWeatherRequest() {
-    // Removed the check from here, it's handled before calling now
-    isRequestPending = true;
-    requestStartTime = millis();
-    Serial.println(millis());
-    // Use current GPS or defaults if GPS isn't valid yet
-    String latToUse = (gpsLat.length() > 0) ? gpsLat : defaultlat;
-    String lonToUse = (gpsLong.length() > 0) ? gpsLong : defaultlong;
-    sendRequest(lonToUse, latToUse);
-}
-void processSerial() {
-    Serial.println(millis());
-      
+void processSerial() {      
         if (H87_Serial.available()) {
-            String receivedData = H87_Serial.readStringUntil('\n');
+            String receivedData = H87_Serial.readStringUntil('\n'); // 讀直到下一行
             Serial.print("來自 HUB8735: ");
             receivedItem = receivedData;
-    }
+        }
 }
 void checkGPS() {
     if (GPS_Serial.available()) {
       Serial.println("GPS Serial is available");
-      // WELP THIS IS A STUPID FUCKING FIX, IT IS JUST IN FRONT OF ME THIS ENTIRE TIME!!!!!1!!!
          if (GPS_Serial.available() > 0) {
               Serial.println("GPS Serial is available x2");
             if (gps.encode(GPS_Serial.read())) {
@@ -154,39 +142,58 @@ void checkGPS() {
 }
 
 
-// Add this function implementation before setup()
-bool readOTI602Temperatures(float* ambient, float* object) {
-  Wire.beginTransmission(0x5A); // OTI602 I2C address
-  Wire.write(0x06); // Command for ambient temperature
-  if (Wire.endTransmission() != 0) {
+bool readTemperatures(float *ambientTemp, float *objectTemp) {
+  byte data[6];
+  
+  // 步驟1和2: 發送寫地址和讀取指令
+  Wire.beginTransmission(OTI602_ADDR);
+  Wire.write(0x80);  // 讀取指令
+  byte error = Wire.endTransmission();
+  
+  if (error != 0) {
+    Serial.print("發送讀取指令錯誤: ");
+    Serial.println(error);
     return false;
   }
   
-  delay(100);
+  // 步驟3和4: 讀取數據
+  // Arduino的Wire庫在requestFrom中自動處理重複開始條件和讀取位址
+  byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
   
-  if (Wire.requestFrom(0x5A, 2) != 2) {
+  Serial.print("接收到的數據量: ");
+  Serial.println(bytesReceived);
+  
+  if (bytesReceived != 6) {
     return false;
   }
   
-  uint16_t ambientRaw = Wire.read();
-  ambientRaw |= Wire.read() << 8;
-  *ambient = ambientRaw * 0.02 - 273.15;
-  
-  Wire.beginTransmission(0x5A);
-  Wire.write(0x07); // Command for object temperature
-  if (Wire.endTransmission() != 0) {
-    return false;
+  // 讀取6個位元組
+  for (int i = 0; i < 6; i++) {
+    if (Wire.available()) {
+      data[i] = Wire.read();
+      Serial.print("數據[");
+      Serial.print(i);
+      Serial.print("]: 0x");
+      Serial.println(data[i], HEX);
+    } else {
+      Serial.println("讀取數據時發生錯誤");
+      return false;
+    }
   }
   
-  delay(100);
-  
-  if (Wire.requestFrom(0x5A, 2) != 2) {
-    return false;
+  // 計算環境溫度 (前3個位元組)
+  int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
+  if (data[2] >= 0x80) {
+    rawAmbient -= 0x1000000;  // 處理負溫度
   }
+  *ambientTemp = rawAmbient / 200.0f;
   
-  uint16_t objectRaw = Wire.read();
-  objectRaw |= Wire.read() << 8;
-  *object = objectRaw * 0.02 - 273.15;
+  // 計算物體溫度 (後3個位元組)
+  int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
+  if (data[5] >= 0x80) {
+    rawObject -= 0x1000000;  // 處理負溫度
+  }
+  *objectTemp = rawObject / 200.0f;
   
   return true;
 }
@@ -202,11 +209,9 @@ void ReadOTI602Temp() {
   } else {
     Serial.println("Failed to read from OTI602 sensor!");
     // Optionally set temps to NaN or a specific error value
+    // 如果沒有把 OTI602 設成 NAN
     oti602AmbientTemp = NAN;
     oti602ObjectTemp = NAN;
-  }
-  if (oti602AmbientTemp == oti602ObjectTemp) {
-    H87_Serial.println("GO");
   }
 }
 
@@ -232,6 +237,7 @@ void getSignal() {
         Serial.println(gps.time.second());
         
         // Update global GPS variables
+        // 更新 GPS 資訊
         gpsLat = String(gps.location.lat());
         gpsLong = String(gps.location.lng());
         Serial.println(gpsLat + "  " + gpsLong);
@@ -248,10 +254,10 @@ void getSignal() {
     }
 }
 
+// 傳送要氣象局資料的程式
 void sendRequest(String lng, String lat) {
   RequestOptions options;
   options.method = "GET";
-  // No need for default checks here if handled in startWeatherRequest
   
   if (lat.length() > 0) {} else {
     Serial.println("No lat");
@@ -261,7 +267,7 @@ void sendRequest(String lng, String lat) {
     Serial.println("No long");
     lng = defaultlong;
   }
-  
+  // 網址包含 經緯度
   String serverUrl = serverUrl1 + lat + "/" + lng;
 
   Serial.println("Requesting weather data from: " + serverUrl);
@@ -307,7 +313,7 @@ void sendRequest(String lng, String lat) {
   }
 }
 
-
+// 要本地溫度與濕度
 void GetTemp() {
   float temp = dht_sensor.readTemperature();
   float hum = dht_sensor.readHumidity();
@@ -336,21 +342,21 @@ void sendData22() {
     if (data.length() == 0) {
         Serial.println("Fetching new weather data...");
         sendRequest(defaultlong, defaultlat);
-        delay(RESPONSE_DELAY);
         lastFetchTime = millis();
     }
 
-    // Parse weather data
-    DynamicJsonDocument weatherData(2048);
+    // Parse weather 
+    // 要傳給伺服器的資料 json 初始化
+    DynamicJsonDocument weatherData(2048); // 大小
     DeserializationError error = deserializeJson(weatherData, data);
 
     DynamicJsonDocument doc(2048);
-        doc["cwa_type"] = weatherData["weather"] | "晴";
-        doc["cwa_location"] = weatherData["location"] | "臺北市士林區";
-        doc["cwa_temp"] = weatherData["temprature"] | 27.7;
-        doc["cwa_hum"] = weatherData["humidity"]| 60;
-        doc["cwa_daliyHigh"] = weatherData["daliyHigh"] | 26;
-        doc["cwa_daliyLow"] = weatherData["daliyLow"] | 15;
+    doc["cwa_type"] = weatherData["weather"] | "晴";
+    doc["cwa_location"] = weatherData["location"] | "臺北市士林區";
+    doc["cwa_temp"] = weatherData["temprature"] | 27.7;
+    doc["cwa_hum"] = weatherData["humidity"]| 60;
+    doc["cwa_daliyHigh"] = weatherData["daliyHigh"] | 26;
+    doc["cwa_daliyLow"] = weatherData["daliyLow"] | 15;
     doc["local_temp"] = dht_sensor.readTemperature();
     doc["local_hum"] = dht_sensor.readHumidity();
     doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
@@ -358,27 +364,47 @@ void sendData22() {
     doc["local_time"] = gpsTime.length() > 0 ? gpsTime : "2024-03-20 15:30:00";
     doc["local_jistatus"] = isJiPowerOn;
 
+    // 檢查 8735 給的資料
     JsonArray detect = doc.createNestedArray("local_detect");
-    detect.add("person");
-    detect.add("car");  
+    if (!receivedItem) else {
+      if (receivedItem == "1") {
+          detect.add("Psilopogon nuchalis");
+      }
+      if (receivedItem == "2") {
+        detect.add("Passer montanus");
+      }
+      if (receivedItem == "3") {
+        detect.add("Gorsachius melanolophus");
+      }
+      if (receivedItem == "4") {
+        detect.add("Cheirotonus formosanus");
+      }
+      if (receivedItem == "5") {
+        detect.add("Trypoxylus dichotomus");
+      }
+    }
 
     String jsonString;
     serializeJson(doc, jsonString);
-
+    // 發送資料
     RequestOptions options;
     options.method = "POST";
     options.headers["Content-Type"] = "application/json";
     options.headers["Content-Length"] = String(jsonString.length());
     options.body = jsonString;
 
+    // 要資料
     Response response = fetch(serverUrl2, options);
     Serial.println("Sent: " + jsonString);
 
     if (response.status == 200) {
-      Serial.println("Done :)");
+      Serial.println("完成");
+
+      // 把資訊變成文字檔
       String responseText = response.text();
-      
+      // 新增 JSON
       StaticJsonDocument<200> responseDoc;
+      // 文字檔變 JSON
       DeserializationError error = deserializeJson(responseDoc, responseText);
       
       if (!error) {
@@ -399,7 +425,7 @@ void sendData22() {
         Serial.println(error.c_str());
       }
     } else {
-      Serial.println("Failed to send data");
+      Serial.println("失敗");
       Serial.println("Response status: " + String(response.status));
       Serial.println("Response body: " + response.text());
     }
