@@ -133,7 +133,7 @@ void setup() {
                  ", SCL=" + String(I2C_SCL_PIN));
 
   // Inti FreeRTOS objs
-  networkRequestQueue = xQueueCreate(NETWORK_QUEUE_LENGTH, sizeof(NetworkRequest));
+  /*networkRequestQueue = xQueueCreate(NETWORK_QUEUE_LENGTH, sizeof(NetworkRequest));
     if (networkRequestQueue == NULL) {
         Serial.println("Error creating network queue");
     }  sensorDataMutex = xSemaphoreCreateMutex();
@@ -143,7 +143,7 @@ void setup() {
     Serial.println("FATAL ERROR: Failed to create FreeRTOS objects!");
     while(1) {
       
-    };
+    };*/
 }
 
 // loop() function remains the same as the previous optimized version
@@ -468,8 +468,8 @@ void sendData22() {
       gpsTime.length() > 0 ? gpsTime : "2024-03-20 15:30:00"; // Default time if GPS time invalid
   jsonDoc["local_jistatus"] = isJiPowerOn;
   // Use isnan check and default to 0 as per user's snippet
-  jsonDoc["ir_ambient"] = isnan(oti602AmbientTemp) ? 0.0 : oti602AmbientTemp;
-  jsonDoc["ir_object"] = isnan(oti602ObjectTemp) ? 0.0 : oti602ObjectTemp;
+  //jsonDoc["ir_ambient"] = isnan(oti602AmbientTemp) ? 0.0 : oti602AmbientTemp;
+  //jsonDoc["ir_object"] = isnan(oti602ObjectTemp) ? 0.0 : oti602ObjectTemp;
   // Note: Sending 0 for NaN might be ambiguous. Sending null (as in previous version)
   // might be better if your server can handle it. Change '0.0' to 'nullptr' if needed.
 
@@ -514,20 +514,33 @@ void sendData22() {
     StaticJsonDocument<200> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, responseText);
 
-    if (!error && responseDoc.containsKey("jistatus")) {
+    if (!error) {
+      if ( responseDoc.containsKey("jistatus")) {
       bool powerState = responseDoc["jistatus"];
       if (powerState != isJiPowerOn) {
         digitalWrite(JIPOWER_PIN, powerState ? HIGH : LOW);
         isJiPowerOn = powerState;
         Serial.println(powerState ? "繼電器開啟" : "繼電器關閉");
+        }
+      } else {
+    Serial.println("數據發送失敗: HTTP " + String(response.status));
+    Serial.println("響應內容: " + response.text());
       }
-    } else if (error) {
+    if ( responseDoc.containsKey("ledstatus")) {
+      bool powerState = responseDoc["jistatus"];
+      if (powerState != isJiPowerOn) {
+        digitalWrite(LED_PIN, powerState ? HIGH : LOW);
+        isJiPowerOn = powerState;
+        Serial.println(powerState ? "繼電器開啟" : "繼電器關閉");
+        }
+      } else {
+    Serial.println("數據發送失敗: HTTP " + String(response.status));
+    Serial.println("響應內容: " + response.text());
+      }
+    } else{
       Serial.println("解析服務器響應失敗: " + String(error.c_str()));
       Serial.println("響應內容: " + responseText);
     }
-
-  } else {
-    Serial.println("數據發送失敗: HTTP " + String(response.status));
-    Serial.println("響應內容: " + response.text());
+  
   }
 }
