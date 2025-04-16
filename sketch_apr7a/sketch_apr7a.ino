@@ -198,7 +198,8 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   return true;
 }
 
-// Wrapper function to read and print OTI602 data
+float prevOti602JbjectTemp = NAN;
+const float tempChangeThreshold = 0.5;
 void ReadOTI602Temp() {
   if (readOTI602Temperatures(&oti602AmbientTemp, &oti602ObjectTemp)) {
     Serial.print("OTI602 Sensor -> Ambient: ");
@@ -206,12 +207,22 @@ void ReadOTI602Temp() {
     Serial.print(" *C, Object: ");
     Serial.print(oti602ObjectTemp, 2);
     Serial.println(" *C");
+    if (!isnan(prevOti602JbjectTemp)) {
+      float tempDelta = abs(oti602ObjectTemp - prevOti602JbjectTemp);
+      if (tempDelta > tempChangeThreshold) {
+        Serial.println("!!!!!!!!!!!!!!!");
+        H87_Serial.println("true");
+      } else { 
+        H87_Serial.println("false");
+      }
+    }
   } else {
     Serial.println("Failed to read from OTI602 sensor!");
     // Optionally set temps to NaN or a specific error value
     // 如果沒有把 OTI602 設成 NAN
     oti602AmbientTemp = NAN;
     oti602ObjectTemp = NAN;
+    prevOti602JbjectTemp = NAN;
   }
 }
 

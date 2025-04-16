@@ -6,11 +6,11 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-// FreeRTOS includes
+/*// FreeRTOS includes
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-#include "freertos/semphr.h"
+#include "freertos/semphr.h"*/
 
 #define DHT_SENSOR_PIN 33
 #define DHT_SENSOR_TYPE DHT11
@@ -79,7 +79,7 @@ HardwareSerial H87_Serial(2);
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 
 StaticJsonDocument<768> jsonDoc; // For sending data
-
+/*
 // FreeRTOS Handles
 QueueHandle_t networkRequestQueue;
 SemaphoreHandle_t sensorDataMutex; // Protects sensor/GPS/status variables
@@ -96,7 +96,7 @@ typedef struct {
 
 void networkTask(void *pvParameters); //ASK
 void requestWeatherData_task(); //ASK
-void sendData22_task(); //THIS IS A TASK THAT THE DEVICE FOLLOWS
+void sendData22_task(); //THIS IS A TASK THAT THE DEVICE FOLLOWS*/
 
 void setup() {
   Serial.begin(115200);
@@ -202,37 +202,6 @@ void loop() {
   delay(10); // Small delay to prevent busy-waiting
 }
 
-
-// checkI2CDevices() remains the same
-void checkI2CDevices() {
-  Serial.println("掃描I2C設備...");
-  byte error, address;
-  int deviceCount = 0;
-
-  for (address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
-
-    if (error == 0) {
-      Serial.print("找到I2C設備在地址: 0x");
-      if (address < 16) Serial.print("0");
-      Serial.print(address, HEX);
-      if (address == OTI602_ADDR) Serial.print(" (OTI602)");
-      Serial.println();
-      deviceCount++;
-    } else if (error == 4) {
-      Serial.print("未知錯誤在地址 0x");
-      if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
-    }
-  }
-
-  if (deviceCount == 0) {
-    Serial.println("沒有找到I2C設備");
-  } else {
-    Serial.println("找到 " + String(deviceCount) + " 個I2C設備");
-  }
-}
 
 // processSerial() remains the same
 void processSerial() {

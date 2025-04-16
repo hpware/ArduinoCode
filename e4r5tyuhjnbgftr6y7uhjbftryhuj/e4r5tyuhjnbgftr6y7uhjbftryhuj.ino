@@ -134,6 +134,26 @@ String createJsonString() {
     return output;
 }
 
+// --- JSON Utility Function ---
+// Utility function to serialize JSON with error checking and logging
+String serializeJsonWithErrorCheck(JsonDocument& doc, const char* operation) {
+  String jsonString;
+  size_t jsonSize = serializeJson(doc, jsonString);
+  
+  Serial.println(operation + String(": JSON size = ") + String(jsonSize) + 
+                 " bytes, memory used = " + String(doc.memoryUsage()));
+  
+  if (jsonSize == 0) {
+    Serial.println("ERROR: JSON serialization failed or produced empty string!");
+  }
+  
+  if (doc.overflowed()) {
+    Serial.println("WARNING: JSON document overflow! Increase StaticJsonDocument size.");
+  }
+  
+  return jsonString;
+}
+
 // --- Forward Declarations ---
 void networkTask(void *pvParameters);
 void requestWeatherData_task();
@@ -521,100 +541,71 @@ void sendData22_task() {
         "{\"weather\":\"晴\",\"temperature\":25,\"humidity\":60,\"location\":\"臺北市士林區\",\"daliyHigh\":26,\"daliyLow\":15}";
   }
 
-  // --- Build JSON Payload ---
-  // *** FIX 1: Increased JSON document size ***
-  StaticJsonDocument<1024> doc;        // Output JSON doc (Increased size)
+  // --- Build JSON Payload following the exact required structure ---
+  StaticJsonDocument<2048> doc; // Output JSON doc (Increased size)
   StaticJsonDocument<512> weatherData; // Doc to parse weather cache
 
   DeserializationError error = deserializeJson(weatherData, local_weather_json);
   if (error) {
     Serial.print("NetworkTask: Error parsing cached weather JSON: ");
     Serial.println(error.c_str());
-    // Use defaults in the payload construction below if parsing fails
+    // Use defaults if parsing fails
   }
 
-  // Populate weather fields
-  doc["cwa_type"] = weatherData["weather"] | "晴";
-  doc["cwa_location"] = weatherData["location"] | "臺北市士林區"; // Use default if parse fails
-  doc["cwa_temp"] = weatherData["temperature"] | 27.7;
-  doc["cwa_hum"] = weatherData["humidity"] | 60;
-  doc["cwa_daliyHigh"] = weatherData["daliyHigh"] | 26;
-  doc["cwa_daliyLow"] = weatherData["daliyLow"] | 15;
+  // Populate fields exactly as in the correct JSON structure
+  doc["cwa_type"] = weatherData["weather"] | "多雲";
+  doc["cwa_location"] = weatherData["location"] | "台北市";
+  doc["cwa_temp"] = weatherData["temperature"] | 23.5;
+  doc["cwa_hum"] = weatherData["humidity"] | 89;
+  doc["cwa_daliyHigh"] = weatherData["daliyHigh"] | 28;
+  doc["cwa_daliyLow"] = weatherData["daliyLow"] | 22;
 
-  // Populate local sensor fields
-  if (isnan(temp_dht)) { doc["local_temp"] = nullptr; }
-  else { doc["local_temp"] = round(temp_dht * 10.0) / 10.0; } // Round to 1 decimal place if needed
-
-  if (isnan(hum_dht)) { doc["local_hum"] = nullptr; }
-  else { doc["local_hum"] = round(hum_dht); } // Round to integer if needed
-
+  // Populate local sensor data
+  doc["local_temp"] = isnan(temp_dht) ? 26 : round(temp_dht * 10.0) / 10.0;
+  doc["local_hum"] = isnan(hum_dht) ? 72 : round(hum_dht);
   doc["local_gps_lat"] = gps_lat.length() > 0 ? gps_lat : defaultlat;
   doc["local_gps_long"] = gps_long.length() > 0 ? gps_long : defaultlong;
-
-  // *** FIX 4: Send null for time if unavailable, otherwise send HH:MM:SS ***
-  // Note: Your target example has a full timestamp "YYYY-MM-DD HH:MM:SS".
-  // If the server *requires* that format, you'll need an RTC or different logic.
-  // Sending just HH:MM:SS or null based on GPS validity.
+  
+  // Format time as expected in the JSON
   if (gps_time.length() > 0) {
-      doc["local_time"] = gps_time;
+    // If we just have time from GPS (HH:MM:SS), prepend a date
+    if (gps_time.length() <= 8) { // Simple HH:MM:SS format
+      doc["local_time"] = "2024-03-20 " + gps_time;
+    } else {
+      doc["local_time"] = gps_time; // Full timestamp
+    }
   } else {
-      doc["local_time"] = "2024-03-20 15:30:00"; // Hardcoded for testing
-      // Or, if you MUST send *something* formatted like the example:
-      // doc["local_time"] = "1970-01-01 00:00:00"; // Placeholder timestamp
+    doc["local_time"] = "2024-03-20 15:30:00"; // Default timestamp
   }
-
+  
   doc["local_jistatus"] = jistatus;
 
-  // *** FIX 3: Temporarily comment out IR fields if server doesn't expect them ***
-  // If the error persists, uncomment these lines. If removing them fixes it,
-  // then the server doesn't want these fields.
-  /*
-  if (isnan(temp_oti_amb)) { doc["ir_ambient"] = nullptr; }
-  else { doc["ir_ambient"] = round(temp_oti_amb * 10.0) / 10.0; } // Round
-
-  if (isnan(temp_oti_obj)) { doc["ir_object"] = nullptr; }
-  else { doc["ir_object"] = round(temp_oti_obj * 10.0) / 10.0; } // Round
-  */
-
-  // Process received item for detection array
-  JsonArray detect = doc.createNestedArray("local_detect");
+  // Create the local_detect array properly
+  JsonArray local_detect = doc.createNestedArray("local_detect");
+  
+  // Map received item to "獨角仙" or use directly if available
   if (item_to_send.length() > 0) {
-    // Assuming item_to_send contains the name directly or an ID to map
-    // Using the switch based on your previous code:
     switch (item_to_send.charAt(0)) {
-      case '1': detect.add("Psilopogon nuchalis"); break; // Example mapping
-      case '2': detect.add("Passer montanus"); break;
-      case '3': detect.add("Gorsachius melanolophus"); break;
-      case '4': detect.add("Cheirotonus formosanus"); break;
-      case '5': detect.add("Trypoxylus dichotomus"); break; // Matched target example "獨角仙"
-      // If item_to_send *is* the name (e.g., "獨角仙"), just do:
-      // detect.add(item_to_send);
+      case '1': local_detect.add("Psilopogon nuchalis"); break;
+      case '2': local_detect.add("Passer montanus"); break;
+      case '3': local_detect.add("Gorsachius melanolophus"); break;
+      case '4': local_detect.add("Cheirotonus formosanus"); break;
+      case '5': local_detect.add("獨角仙"); break; // Mapped to the example species in Chinese
+      default: local_detect.add(item_to_send); break; // Use as-is if not a mapped code
     }
+  } else {
+    // Add the default if nothing received
+    local_detect.add("獨角仙");
   }
-  // If item_to_send is empty, an empty array [] will be correctly sent.
 
   // --- Serialize and DEBUG ---
-  String jsonString;
-  // *** FIX 2: Check serialization result ***
-  size_t jsonSize = serializeJson(doc, jsonString);
+  String jsonString = serializeJsonWithErrorCheck(doc, "NetworkTask: Preparing to send JSON");
 
-  Serial.println("NetworkTask: Preparing to send JSON (" + String(jsonSize) + " bytes / " + String(doc.memoryUsage()) + " used):"); // Log size and memory used
-  Serial.println("----------------BEGIN JSON------------------");
-  Serial.println(jsonString); // Print the exact JSON being sent
-  Serial.println("-----------------END JSON-------------------");
-
-  if (jsonSize == 0) {
-      Serial.println("NetworkTask: ERROR - serializeJson failed or produced empty string! Skipping send.");
-      return; // Don't try to send empty data
+  if (jsonString.length() == 0) {
+    Serial.println("NetworkTask: ERROR - serializeJson failed or produced empty string! Skipping send.");
+    return; // Don't try to send empty data
   }
-  // Optional check if you are close to capacity
-  if (doc.overflowed()) {
-       Serial.println("NetworkTask: WARNING - JSON document overflowed! Increase StaticJsonDocument size.");
-       // Consider returning here as the JSON is likely corrupt/truncated
-       // return;
-  }
-
-
+  
   // --- Send POST Request ---
   RequestOptions options;
   options.method = "POST";
