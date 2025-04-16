@@ -142,7 +142,7 @@ void checkGPS() {
 }
 
 
-bool readTemperatures(float *ambientTemp, float *objectTemp) {
+bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   byte data[6];
   
   // 步驟1和2: 發送寫地址和讀取指令
@@ -366,7 +366,7 @@ void sendData22() {
 
     // 檢查 8735 給的資料
     JsonArray detect = doc.createNestedArray("local_detect");
-    if (!receivedItem) else {
+    if (!receivedItem) {} else {
       if (receivedItem == "1") {
           detect.add("Psilopogon nuchalis");
       }
