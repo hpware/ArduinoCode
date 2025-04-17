@@ -308,7 +308,7 @@ void ReadOTI602Temp() {
   }
 }
 
-// getSignal() remains the same
+// getSignal() remains the same8899xzzz
 void getSignal() {
   if (gps.location.isUpdated() && gps.location.isValid()) {
     gpsLat = String(gps.location.lat(), 6);

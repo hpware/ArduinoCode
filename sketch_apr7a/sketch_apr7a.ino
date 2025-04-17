@@ -6,13 +6,14 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-#define DHT_SENSOR_PIN 21
+#define DHT_SENSOR_PIN 33
 #define DHT_SENSOR_TYPE DHT11
-#define JIPOWER_PIN 22
+#define JIPOWER_PIN 25
+#define LED_PIN 32
 
 // 設定紅外線 PIN 與 地址
-#define I2C_SDA_PIN 25 
-#define I2C_SCL_PIN 33
+#define I2C_SDA_PIN 21
+#define I2C_SCL_PIN 22
 #define OTI602_ADDR 0x10 
 
 // WiFi 設定
@@ -20,7 +21,7 @@ const char *ssid = "hel";
 const char *password = "1234567890";
 // API 網址
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
-const char *serverUrl2 = "https://hpg7.sch2.top/logger/store";
+const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
 String data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
@@ -81,6 +82,8 @@ void setup() {
   dht_sensor.begin();
   pinMode(JIPOWER_PIN, OUTPUT);
   digitalWrite(JIPOWER_PIN, LOW);
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000); // 100kHz
   Serial.print("I2C Initialized for OTI602 on SDA=");
@@ -209,6 +212,7 @@ void ReadOTI602Temp() {
     Serial.println(" *C");
     if (!isnan(prevOti602JbjectTemp)) {
       float tempDelta = abs(oti602ObjectTemp - prevOti602JbjectTemp);
+      Serial.println(tempDelta);
       if (tempDelta > tempChangeThreshold) {
         Serial.println("!!!!!!!!!!!!!!!");
         H87_Serial.println("true");
@@ -216,6 +220,7 @@ void ReadOTI602Temp() {
         H87_Serial.println("false");
       }
     }
+    prevOti602JbjectTemp = oti602ObjectTemp;
   } else {
     Serial.println("Failed to read from OTI602 sensor!");
     // Optionally set temps to NaN or a specific error value
@@ -379,7 +384,7 @@ void sendData22() {
     JsonArray detect = doc.createNestedArray("local_detect");
     if (!receivedItem) {} else {
       if (receivedItem == "1") {
-          detect.add("Psilopogon nuchalis");
+        detect.add("Psilopogon nuchalis");
       }
       if (receivedItem == "2") {
         detect.add("Passer montanus");
@@ -419,13 +424,27 @@ void sendData22() {
       DeserializationError error = deserializeJson(responseDoc, responseText);
       
       if (!error) {
-        bool powerState = responseDoc["jistatus"];
-        if (powerState == true) {
+        bool jiPowerState = responseDoc["jistatus"];
+        Serial.println(jiPowerState);
+        if (jiPowerState == true) {
           digitalWrite(JIPOWER_PIN, HIGH);
           isJiPowerOn = true;
-          Serial.println("Power ON requested by server");
-        } else if (powerState == false) {
+          Serial.println("Power ON requested by servder");
+        } else if (jiPowerState == false) {
           digitalWrite(JIPOWER_PIN, LOW);
+          isJiPowerOn = false;
+          Serial.println("Power OFF requested by server");
+        } else {
+          Serial.println("Oops");
+        }
+        bool ledstatus = responseDoc["ledstatus"];
+        Serial.println(ledstatus);
+        if (ledstatus == true) {
+          digitalWrite(LED_PIN, HIGH);
+          isJiPowerOn = true;
+          Serial.println("Power ON requested by server");
+        } else if (ledstatus == false) {
+          digitalWrite(LED_PIN, LOW);
           isJiPowerOn = false;
           Serial.println("Power OFF requested by server");
         } else {
