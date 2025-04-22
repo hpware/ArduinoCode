@@ -28,27 +28,38 @@
 const char *ssid = "hel";
 const char *password = "1234567890";
 // API 網址
-const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
-const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
+const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
+const char *serverHost1 = "edu.yhw.tw";
+const char *serverUrl2 = "https://zb-logger.zeabur.app/logger/store";
+const char *serverHost2 = "zb-logger.zeabur.app";
 String data = "";
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
 bool initJiPower = true;
-int JipowerTime = 0;
 // 預設 GPS
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
 String gpsLat = "";
 String gpsLong = "";
 String gpsTime = "";
-bool shouldSendData = false;
-
+// Set Global temp & humidity
+float temp = 0;
+float hum = 0;
+// Set global cwa data
+DynamicJsonDocument cwa_data(512);
+String cwa_testing_station = "";
+String cwa_wtype = "";
+float cwa_temp = 0;
+float cwa_hum = 0;
+float cwa_temp_high = 0;
+float cwa_temp_low = 0;
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
 
 TinyGPSPlus gps;
+//WiFiClient client;
 HardwareSerial GPS_Serial(1);  // GPS 連接
 HardwareSerial H87_Serial(2);  // 8735 連接
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
@@ -91,6 +102,7 @@ void setup() {
     &SendTask,
     1);
   delay(500);
+  cwa_data.clear();
 }
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
 void loop() {}
@@ -98,6 +110,9 @@ void loop() {}
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
   while (true) {
+    // Read DHT sensor
+    temp = dht_sensor.readTemperature();
+    hum = dht_sensor.readHumidity();
     // Read Hub 8735 serial data
     if (H87_Serial.available()) {
       String data = H87_Serial.readStringUntil('\n');
@@ -118,12 +133,58 @@ void MainTaskC(void *pvParameters) {
         }
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
 void SendTaskC(void *pvParameters) {
   while (true) {
-    Serial.println("SendTask");
-    delay(1000);
+    // Send weather request
+    sendRequest();
+  }
+}
+
+void sendRequest() {
+  cwa_data.clear();
+  String lat = gpsLat;
+  String lng = gpsLong;
+  RequestOptions options;
+  options.method = "GET";
+
+  if (lat.length() > 0) {
+  } else {
+    Serial.println("No lat");
+    lat = defaultlat;
+  }
+  if (lng.length() > 0) {
+  } else {
+    Serial.println("No long");
+    lng = defaultlong;
+  }
+  // 網址包含
+  String serverUrl = serverUrl1 + lat + "/" + lng;
+
+  Serial.println("Requesting weather data from: " + serverUrl);
+  const char *urlChar = serverUrl.c_str();
+  Response response = fetch(urlChar, options);
+
+  // Check response
+  if (response.status == 200) {
+    Serial.println("Data received successfully");
+
+    // Parse the JSON response
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = serialized(doc, response.text());
+    cwa_data["data"][0] = 48.756080;
+    cwa_data["data"][1] = 2.302038; 
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+  } else {
+    Serial.println("Failed to get data");
+    Serial.println("Response status: " + String(response.status));
+    Serial.println("Response body: " + response.text());
   }
 }
