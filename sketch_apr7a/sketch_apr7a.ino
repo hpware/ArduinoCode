@@ -90,6 +90,8 @@ void setup() {
   Serial.print(I2C_SDA_PIN);
   Serial.print(", SCL=");
   Serial.println(I2C_SCL_PIN);
+    Serial.print("setup() running on core ");
+  Serial.println(xPortGetCoreID());
 }
 
 /**
@@ -98,6 +100,8 @@ void setup() {
  * 還有 IR 沒有資訊
  */
 void loop() {
+    Serial.print("setup() running on core ");
+  Serial.println(xPortGetCoreID());
     unsigned long currentMillis = millis();
     // Temperature check
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {

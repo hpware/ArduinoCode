@@ -4,8 +4,8 @@
 #include "SPIFFS.h"
 
 // Configuration
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "hel";
+const char* password = "1234567890";
 const char* serverUrl = "http://192.168.1.27:3000";
 
 // Pin definitions

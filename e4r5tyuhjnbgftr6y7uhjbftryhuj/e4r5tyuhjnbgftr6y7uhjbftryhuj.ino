@@ -33,7 +33,7 @@ const char *password = "1234567890";
 
 // --- API URLs ---
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
-const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
+const char *serverUrl2 = "https://yh-acerswift-testing-logger.sch2.top/logger/store";
 
 // --- Timing Intervals ---
 const unsigned long TEMP_INTERVAL = 5000;
@@ -90,7 +90,7 @@ typedef struct {
 struct SensorData {
     // CWA (Central Weather Administration) data
     String cwa_type = "多雲";
-    String cwa_location = "台北市";
+    String cwa_location = "臺北市士林區";
     float cwa_temp = 23.5;
     float cwa_hum = 89;
     float cwa_daliyHigh = 28;
@@ -108,7 +108,7 @@ struct SensorData {
 
 // JSON helper function
 String createJsonString() {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<1024> doc;
     
     // CWA data
     doc["cwa_type"] = sensorData.cwa_type;
