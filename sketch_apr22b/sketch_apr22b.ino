@@ -133,6 +133,7 @@ void MainTaskC(void *pvParameters) {
         }
       }
     }
+    Serial.println("Main: ✅");
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -141,7 +142,45 @@ void SendTaskC(void *pvParameters) {
   while (true) {
     // Send weather request
     sendRequest();
+    // Send local data
+    sssdata();
   }
+}
+
+void sssdata() {
+    WiFiClient client;
+
+    int retries = 5;
+  while(!client.connect(serverHost2, 443) && (retries-- > 0)) {
+    Serial.print(".");
+  }
+  Serial.println();
+  if(!client.connected()) {
+    Serial.println("Failed to connect...");
+  }
+  String jsonObject = String("{\"value1\":\"") + "44" + "\",\"value2\":\"" + (100.0F)
+                      + "\",\"value3\":\"" + "354" + "\"}";      
+  client.println(String("POST ") + "/logger/store" + " HTTP/1.1");
+  client.println(String("Host: ") + serverHost2); 
+  client.println("Connection: close\r\nContent-Type: application/json");
+  client.print("Content-Length: ");
+  client.println(jsonObject.length());
+  client.println();
+  client.println(jsonObject);
+        
+  int timeout = 5 * 10; // 5 seconds             
+  while(!client.available() && (timeout-- > 0)){
+    delay(100);
+  }
+  if(!client.available()) {
+    Serial.println("No response...");
+  }
+  while(client.available()){
+    Serial.write(client.read());
+  }
+  
+  Serial.println("\nclosing connection");
+  client.stop(); 
 }
 
 void sendRequest() {
@@ -170,20 +209,14 @@ void sendRequest() {
 
   // Check response
   if (response.status == 200) {
-    Serial.println("Data received successfully");
-
-    // Parse the JSON response
-    DynamicJsonDocument doc(2048);
-    DeserializationError error = serialized(doc, response.text());
-    cwa_data["data"][0] = 48.756080;
-    cwa_data["data"][1] = 2.302038; 
+    Serial.println("✅");
+    String restext = response.text();
+    DeserializationError error = deserializeJson(cwa_data, restext);
     if (error) {
-      Serial.print("JSON parsing failed: ");
-      Serial.println(error.c_str());
-      return;
+      Serial.println(error.f_str());
     }
   } else {
-    Serial.println("Failed to get data");
+    Serial.println("❌");
     Serial.println("Response status: " + String(response.status));
     Serial.println("Response body: " + response.text());
   }
