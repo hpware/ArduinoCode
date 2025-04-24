@@ -5,13 +5,14 @@
 #include <DHT.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 /**
  * Sources: 
  * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/ 
  * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
  * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
-
+ * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
 */
 
 #define DHT_SENSOR_PIN 33
@@ -141,14 +142,15 @@ void MainTaskC(void *pvParameters) {
 void SendTaskC(void *pvParameters) {
   while (true) {
     // Send weather request
-    sendRequest();
+    ssdata();
     // Send local data
     sssdata();
   }
 }
 
 void sssdata() {
-    WiFiClient client;
+    WiFiClientSecure client;
+     client.setInsecure();
 
     int retries = 5;
   while(!client.connect(serverHost2, 443) && (retries-- > 0)) {
@@ -158,8 +160,31 @@ void sssdata() {
   if(!client.connected()) {
     Serial.println("Failed to connect...");
   }
-  String jsonObject = String("{\"value1\":\"") + "44" + "\",\"value2\":\"" + (100.0F)
-                      + "\",\"value3\":\"" + "354" + "\"}";      
+  String cwaType = "多雲";
+String cwaLocation = "台北市";
+float cwaTemp = 23.5;
+int cwaHum = 89;
+int cwaDailyHigh = 28;
+int cwaDailyLow = 22;
+int localTemp = 26;
+int localHum = 72;
+String localGpsLat = "25.134393";
+String localGpsLong = "121.469968";
+String localTime = "2024-03-20 15:30:00";
+bool localJistatus = true;
+String localDetect = "獨角仙";
+
+String jsonObject = String("{\"cwa_type\":\"") + cwaType + "\",\"cwa_location\":\"" +
+                      cwaLocation + "\",\"cwa_temp\":" + String(cwaTemp) +
+                      ",\"cwa_hum\":" + String(cwaHum) + ",\"cwa_daliyHigh\":" +
+                      String(cwaDailyHigh) + ",\"cwa_daliyLow\":" +
+                      String(cwaDailyLow) + ",\"local_temp\":" + String(localTemp) +
+                      ",\"local_hum\":" + String(localHum) + ",\"local_gps_lat\":\"" +
+                      localGpsLat + "\",\"local_gps_long\":\"" + localGpsLong +
+                      "\",\"local_time\":\"" + localTime + "\",\"local_jistatus\":" +
+                      (localJistatus ? "true" : "false") + ",\"local_detect\":[\"" +
+                      localDetect + "\"]}";
+
   client.println(String("POST ") + "/logger/store" + " HTTP/1.1");
   client.println(String("Host: ") + serverHost2); 
   client.println("Connection: close\r\nContent-Type: application/json");
@@ -181,6 +206,49 @@ void sssdata() {
   
   Serial.println("\nclosing connection");
   client.stop(); 
+}
+
+
+void ssdata() {
+  cwa_data.clear();
+  String lat = gpsLat;
+  String lng = gpsLong;
+  WiFiClientSecure client1;
+     client1.setInsecure();
+
+    int retries = 5;
+  while(!client1.connect(serverHost1, 443) && (retries-- > 0)) {
+    Serial.print(".");
+  }
+  Serial.println();
+  if(!client1.connected()) {
+    Serial.println("Failed to connect...");
+  }
+  String servoUrl21 = serverUrl1 + lat + "/" + lng;
+
+  client1.println(String("GET ") + servoUrl21 + " HTTP/1.1");
+  client1.println(String("Host: ") + serverHost1); 
+  client1.println("Connection: close\r");
+        
+  int timeout = 5 * 10; // 5 seconds             
+  while(!client1.available() && (timeout-- > 0)){
+    delay(100);
+  }
+  if(!client1.available()) {
+    Serial.println("No response...");
+  }
+  String restext = "";
+  while(client1.available()){
+    char c = client1.read();
+    restext += c;
+  }
+      Serial.println("✅");
+    DeserializationError error = deserializeJson(cwa_data, restext);
+    if (error) {
+      Serial.println(error.f_str());
+    }
+  Serial.println("\nclosing connection");
+  client1.stop(); 
 }
 
 void sendRequest() {
