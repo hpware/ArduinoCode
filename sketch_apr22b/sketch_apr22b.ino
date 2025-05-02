@@ -34,8 +34,8 @@ const char *password = "1234567890";
 // API 網址
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
 const char *serverHost1 = "edu.yhw.tw";
-const char *serverUrl2 = "https://yh-acerswift-testing-logger.zeabur.app/logger/store";
-const char *serverHost2 = "yh-acerswift-testing-logger.zeabur.app";
+const char *serverUrl2 = "https://zb-logger.zeabur.app/logger/store";
+const char *serverHost2 = "zb-logger.zeabur.app";
 String data = "";
 String h87data = "";
 bool sendData = false;
@@ -58,6 +58,11 @@ float cwa_temp = 0;
 float cwa_hum = 0;
 float cwa_temp_high = 0;
 float cwa_temp_low = 0;
+// Do Stuff
+const unsigned long TEMP_INTERVAL = 60000;
+unsigned long lastTempCheck = 0;
+bool initSystem = false;
+
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
@@ -140,8 +145,15 @@ void MainTaskC(void *pvParameters) {
 
 void SendTaskC(void *pvParameters) {
   while (true) {
+    unsigned long currentMillis = millis();
     // Send weather request
-    getWeatherData();
+    if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
+      getWeatherData();
+      lastTempCheck = currentMillis;
+    }
+    if (initSystem == false) {
+      initSystem = true;
+    }
     // Send local data
     sssdata();
     vTaskDelay(1000);
@@ -190,8 +202,8 @@ void sssdata() {
     }
   }
 
-String jsonObject = String("{\"cwa_type\":\"") + cwaType + "\",\"cwa_location\":\"" + cwaLocation + "\",\"cwa_temp\":" + String(cwaTemp) + ",\"cwa_hum\":" + String(cwaHum) + ",\"cwa_daliyHigh\":" + String(cwaDailyHigh) + ",\"cwa_daliyLow\":" + String(cwaDailyLow) + ",\"local_temp\":" + String(localTemp) + ",\"local_hum\":" + String(localHum) + ",\"local_gps_lat\":\"" + localGpsLat + "\",\"local_gps_long\":\"" + localGpsLong + "\",\"local_time\":\"" + localTime + "\",\"local_jistatus\":" + (localJistatus ? "true" : "false") + ",\"local_detect\":[";
-/*
+  String jsonObject = String("{\"cwa_type\":\"") + cwaType + "\",\"cwa_location\":\"" + cwaLocation + "\",\"cwa_temp\":" + String(cwaTemp) + ",\"cwa_hum\":" + String(cwaHum) + ",\"cwa_daliyHigh\":" + String(cwaDailyHigh) + ",\"cwa_daliyLow\":" + String(cwaDailyLow) + ",\"local_temp\":" + String(localTemp) + ",\"local_hum\":" + String(localHum) + ",\"local_gps_lat\":\"" + localGpsLat + "\",\"local_gps_long\":\"" + localGpsLong + "\",\"local_time\":\"" + localTime + "\",\"local_jistatus\":" + (localJistatus ? "true" : "false") + ",\"local_detect\":[";
+  /*
 // Add elements to the local_detect array
 for (size_t i = 0; i < localDetect.size(); ++i) {
     jsonObject += "\"" + localDetect[i] + "\"";
@@ -200,7 +212,7 @@ for (size_t i = 0; i < localDetect.size(); ++i) {
     }
 }*/
 
-jsonObject += "]}"; // Close the array and the main object
+  jsonObject += "]}";  // Close the array and the main object
 
 
   client.println(String("POST ") + "/logger/store" + " HTTP/1.1");
