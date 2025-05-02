@@ -43,33 +43,20 @@ void Task2(void *pvParameters) {
 }
 
 // 傳送音檔給 Groq
-void sendAudio() {
+void sendAudio(const uint8_t* audioData, size_t audioDataSize, const char* audioContentType) {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
   http.begin(client, groqApiUrl);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", "Bearer " + String(groqApiKey));
-  String httpRequestData = "{\"messages\": [{\"role\": \"user\", \"content\": \"Tell me a short story about an adventurous cat.\"}]}" int httpResponseCode = http.POST(httpRequestData);
+  int httpResponseCode = http.POST(audioData, audioDataSize);
   if (httpResponseCode > 0) {
     String response = http.getString();
-    Serial.println(httpResponseCode);
-    Serial.println(response);
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-    if (error) {
-      Serial.print(F("deserializeJson() failed: "));
-      Serial.println(error.f_str());
-      return;
-    }
-    const char *generatedText = doc["choices"][0]["message"]["content"];
-    if (generatedText) {
-      Serial.println("Generated Text:");
-      Serial.println(generatedText);
-    } else {
-      Serial.println("Could not find generated text in response.");
-    }
-
+      Serial.print("Groq Audio Transcription Response Code: ");
+      Serial.println(httpResponseCode);
+      Serial.println("Response Body:");
+      Serial.println(response);
   } else {
     Serial.printf("HTTP Error: %s\n", http.errorToString(httpResponseCode).c_str());
   }
