@@ -10,6 +10,15 @@
         "ranges": "cpp",
         "span": "cpp",
         "xstring": "cpp",
-        "istream": "cpp"
+        "istream": "cpp",
+        "chrono": "cpp",
+        "deque": "cpp",
+        "format": "cpp",
+        "forward_list": "cpp",
+        "initializer_list": "cpp",
+        "list": "cpp",
+        "regex": "cpp",
+        "xhash": "cpp",
+        "xtree": "cpp"
     }
 }

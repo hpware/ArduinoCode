@@ -6,6 +6,8 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+
 
 /**
  * Sources: 
@@ -13,6 +15,7 @@
  * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
  * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
  * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
+ * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
 */
 
 #define DHT_SENSOR_PIN 33
@@ -31,13 +34,13 @@ const char *password = "1234567890";
 // API 網址
 const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
 const char *serverHost1 = "edu.yhw.tw";
-const char *serverUrl2 = "https://zb-logger.zeabur.app/logger/store";
-const char *serverHost2 = "zb-logger.zeabur.app";
+const char *serverUrl2 = "https://yh-acerswift-testing-logger.zeabur.app/logger/store";
+const char *serverHost2 = "yh-acerswift-testing-logger.zeabur.app";
 String data = "";
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
-bool initJiPower = true;
+bool isLedPowerOn = false;
 // 預設 GPS
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
@@ -85,7 +88,7 @@ void setup() {
   Wire.setClock(100000);
   // init task
   xTaskCreatePinnedToCore(
-    MainTaskC,   // Task func that it should be using (also don't use the same name as the task handle name, it won't work at all)
+    MainTaskC,   // Task function that it should be using (also don't use the same name as the task handle name, it won't work at all)
     "MainTask",  // Task name
     10000,       // Stack size
     NULL,        // param of the task
@@ -128,164 +131,136 @@ void MainTaskC(void *pvParameters) {
           if (gps.location.isValid()) {
             gpsLat = String(gps.location.lat());
             gpsLong = String(gps.location.lng());
-          } else {
-            Serial.println("GPS location is not valid");
           }
         }
       }
     }
-    Serial.println("Main: ✅");
-    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
 void SendTaskC(void *pvParameters) {
   while (true) {
     // Send weather request
-    ssdata();
+    getWeatherData();
     // Send local data
     sssdata();
+    vTaskDelay(1000);
   }
 }
 
 void sssdata() {
-    WiFiClientSecure client;
-     client.setInsecure();
+  WiFiClientSecure client;
+  client.setInsecure();
 
-    int retries = 5;
-  while(!client.connect(serverHost2, 443) && (retries-- > 0)) {
+  int retries = 5;
+  while (!client.connect(serverHost2, 443) && (retries-- > 0)) {
     Serial.print(".");
   }
   Serial.println();
-  if(!client.connected()) {
+  if (!client.connected()) {
     Serial.println("Failed to connect...");
   }
-  String cwaType = "多雲";
-String cwaLocation = "台北市";
-float cwaTemp = 23.5;
-int cwaHum = 89;
-int cwaDailyHigh = 28;
-int cwaDailyLow = 22;
-int localTemp = 26;
-int localHum = 72;
-String localGpsLat = "25.134393";
-String localGpsLong = "121.469968";
-String localTime = "2024-03-20 15:30:00";
-bool localJistatus = true;
-String localDetect = "獨角仙";
+  String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
+  String cwaLocation = cwa_data.containsKey("location") ? cwa_data["location"].as<String>() : "臺北市士林區";
+  float cwaTemp = 23.5;
+  int cwaHum = 89;
+  int cwaDailyHigh = 28;
+  int cwaDailyLow = 22;
+  int localTemp = temp;
+  int localHum = hum;
+  String localGpsLat = gpsLat.length() > 0 ? gpsLat : defaultlat;
+  String localGpsLong = gpsLong.length() > 0 ? gpsLong : defaultlong;
+  String localTime = "2024-03-20 15:30:00";
+  bool localJistatus = isJiPowerOn;
+  bool localLedStatus = isLedPowerOn;
+  String localDetect = "獨角仙";
 
-String jsonObject = String("{\"cwa_type\":\"") + cwaType + "\",\"cwa_location\":\"" +
-                      cwaLocation + "\",\"cwa_temp\":" + String(cwaTemp) +
-                      ",\"cwa_hum\":" + String(cwaHum) + ",\"cwa_daliyHigh\":" +
-                      String(cwaDailyHigh) + ",\"cwa_daliyLow\":" +
-                      String(cwaDailyLow) + ",\"local_temp\":" + String(localTemp) +
-                      ",\"local_hum\":" + String(localHum) + ",\"local_gps_lat\":\"" +
-                      localGpsLat + "\",\"local_gps_long\":\"" + localGpsLong +
-                      "\",\"local_time\":\"" + localTime + "\",\"local_jistatus\":" +
-                      (localJistatus ? "true" : "false") + ",\"local_detect\":[\"" +
-                      localDetect + "\"]}";
+  if (cwa_data.containsKey("location")) {
+    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99) {
+      cwaTemp = cwa_data["temperature"].as<float>();
+    }
+    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99) {
+      cwaHum = cwa_data["humidity"].as<int>();
+    }
+    if (!cwa_data["dailyHigh"].isNull() && cwa_data["dailyHigh"] != -99) {
+      cwaDailyHigh = cwa_data["dailyHigh"].as<int>();
+    }
+    if (!cwa_data["daliyLow"].isNull() && cwa_data["daliyLow"] != -99) {
+      cwaDailyLow = cwa_data["daliyLow"].as<int>();
+    }
+  }
+
+String jsonObject = String("{\"cwa_type\":\"") + cwaType + "\",\"cwa_location\":\"" + cwaLocation + "\",\"cwa_temp\":" + String(cwaTemp) + ",\"cwa_hum\":" + String(cwaHum) + ",\"cwa_daliyHigh\":" + String(cwaDailyHigh) + ",\"cwa_daliyLow\":" + String(cwaDailyLow) + ",\"local_temp\":" + String(localTemp) + ",\"local_hum\":" + String(localHum) + ",\"local_gps_lat\":\"" + localGpsLat + "\",\"local_gps_long\":\"" + localGpsLong + "\",\"local_time\":\"" + localTime + "\",\"local_jistatus\":" + (localJistatus ? "true" : "false") + ",\"local_detect\":[";
+/*
+// Add elements to the local_detect array
+for (size_t i = 0; i < localDetect.size(); ++i) {
+    jsonObject += "\"" + localDetect[i] + "\"";
+    if (i < localDetect.size() - 1) {
+        jsonObject += ","; // Add a comma between elements
+    }
+}*/
+
+jsonObject += "]}"; // Close the array and the main object
+
 
   client.println(String("POST ") + "/logger/store" + " HTTP/1.1");
-  client.println(String("Host: ") + serverHost2); 
+  client.println(String("Host: ") + serverHost2);
   client.println("Connection: close\r\nContent-Type: application/json");
   client.print("Content-Length: ");
   client.println(jsonObject.length());
   client.println();
   client.println(jsonObject);
-        
-  int timeout = 5 * 10; // 5 seconds             
-  while(!client.available() && (timeout-- > 0)){
+  Serial.println(jsonObject);
+  int timeout = 5 * 10;  // 5 seconds
+  while (!client.available() && (timeout-- > 0)) {
     delay(100);
   }
-  if(!client.available()) {
-    Serial.println("No response...");
-  }
-  while(client.available()){
-    Serial.write(client.read());
-  }
-  
-  Serial.println("\nclosing connection");
-  client.stop(); 
-}
-
-
-void ssdata() {
-  cwa_data.clear();
-  String lat = gpsLat;
-  String lng = gpsLong;
-  WiFiClientSecure client1;
-     client1.setInsecure();
-
-    int retries = 5;
-  while(!client1.connect(serverHost1, 443) && (retries-- > 0)) {
-    Serial.print(".");
-  }
-  Serial.println();
-  if(!client1.connected()) {
-    Serial.println("Failed to connect...");
-  }
-  String servoUrl21 = serverUrl1 + lat + "/" + lng;
-
-  client1.println(String("GET ") + servoUrl21 + " HTTP/1.1");
-  client1.println(String("Host: ") + serverHost1); 
-  client1.println("Connection: close\r");
-        
-  int timeout = 5 * 10; // 5 seconds             
-  while(!client1.available() && (timeout-- > 0)){
-    delay(100);
-  }
-  if(!client1.available()) {
-    Serial.println("No response...");
-  }
+  //sSerial.println(client.available() ? "true" : "false");
   String restext = "";
-  while(client1.available()){
-    char c = client1.read();
-    restext += c;
-  }
-      Serial.println("✅");
-    DeserializationError error = deserializeJson(cwa_data, restext);
-    if (error) {
-      Serial.println(error.f_str());
+  bool headersPassed = false;
+  String line;
+  while (client.available()) {
+    line = client.readStringUntil('\n');
+    if (line == "\r") {
+      headersPassed = true;
+      continue;
     }
-  Serial.println("\nclosing connection");
-  client1.stop(); 
+    if (headersPassed) {
+      restext += line + "\n";
+    }
+  }
+  Serial.println("✅");
+  DynamicJsonDocument sssdata11(2048);
+  Serial.println(restext);
+  DeserializationError error = deserializeJson(sssdata11, restext);
+  if (sssdata11.containsKey("jistatus")) {
+    isJiPowerOn = sssdata11["ledstatus"];
+    digitalWrite(JIPOWER_PIN, sssdata11["jistatus"]);
+  }
+  if (sssdata11.containsKey("ledstatus")) {
+    isLedPowerOn = sssdata11["ledstatus"];
+    digitalWrite(LED_PIN, sssdata11["ledstatus"]);
+  }
+  if (error) {
+    Serial.print("sssdata() error: ");
+    Serial.println(error.f_str());
+  }
+  client.stop();
 }
 
-void sendRequest() {
-  cwa_data.clear();
-  String lat = gpsLat;
-  String lng = gpsLong;
-  RequestOptions options;
-  options.method = "GET";
-
-  if (lat.length() > 0) {
+void getWeatherData() {
+  HTTPClient http;
+  String latlat = (gpsLat.length() > 0) ? gpsLat : defaultlat;
+  String lnglng = (gpsLong.length() > 0) ? gpsLong : defaultlong;
+  String serverPath = serverUrl1 + latlat + "/" + lnglng;
+  http.begin(serverPath.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0) {
+    String payload = http.getString();
+    Serial.println(payload);
   } else {
-    Serial.println("No lat");
-    lat = defaultlat;
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
   }
-  if (lng.length() > 0) {
-  } else {
-    Serial.println("No long");
-    lng = defaultlong;
-  }
-  // 網址包含
-  String serverUrl = serverUrl1 + lat + "/" + lng;
-
-  Serial.println("Requesting weather data from: " + serverUrl);
-  const char *urlChar = serverUrl.c_str();
-  Response response = fetch(urlChar, options);
-
-  // Check response
-  if (response.status == 200) {
-    Serial.println("✅");
-    String restext = response.text();
-    DeserializationError error = deserializeJson(cwa_data, restext);
-    if (error) {
-      Serial.println(error.f_str());
-    }
-  } else {
-    Serial.println("❌");
-    Serial.println("Response status: " + String(response.status));
-    Serial.println("Response body: " + response.text());
-  }
+  http.end();
 }
