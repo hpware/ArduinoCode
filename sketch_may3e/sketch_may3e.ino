@@ -1,7 +1,9 @@
 /*
-  * Origin: https://www.instructables.com/ESP32-Mic-Testing-With-INMP441-and-DumbDisplay/
+  * AI generated V2
+  * V1: https://github.com/hpware/ArduinoCode/blob/main/sketch_may3d/sketch_may3d.ino (Also AI generated)
+  * Origin: https://www.instructables.com/ESP32-Mic-Testing-With-INMP441-and-DumbDisplay/ <- Give it a look. It's a fine tutorial.
   * AI Chat: https://t3.chat/chat/8b05176e-5139-4266-93ca-87f3d6a477da
-  * This document is AI generated. But it works, Diagram: https://content.instructables.com/FG0/7OW9/LDA8Z9XU/FG07OW9LDA8Z9XU.png?auto=webp&frame=1&width=1024&height=1024&fit=bounds&md=MjAyMy0wMS0yNCAwNzo0OTozMy4w
+  * This code is AI generated. But it works, Diagram: https://content.instructables.com/FG0/7OW9/LDA8Z9XU/FG07OW9LDA8Z9XU.png
 */
 
 #include "FS.h"
@@ -89,29 +91,6 @@ esp_err_t i2s_setpin() {
 // --- SD Card Initialization Function ---
 bool initSDCard() {
   Serial.println("Initializing SD card...");
-
-#ifdef USE_SD_MMC
-  // Using SD_MMC Interface
-  if (!SD_MMC.begin()) {  // Default uses /sdcard mount point, 1-bit mode
-                          // if (!SD_MMC.begin("/sdcard", true)) { // Use this for 4-bit mode
-    Serial.println("SD_MMC Card Mount Failed");
-    return false;
-  }
-  uint8_t cardType = SD_MMC.cardType();
-  if (cardType == CARD_NONE) {
-    Serial.println("No SD_MMC card attached");
-    return false;
-  }
-  Serial.print("SD_MMC Card Type: ");
-  if (cardType == CARD_MMC) Serial.println("MMC");
-  else if (cardType == CARD_SD) Serial.println("SDSC");
-  else if (cardType == CARD_SDHC) Serial.println("SDHC");
-  else Serial.println("UNKNOWN");
-  uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
-  Serial.printf("SD_MMC Card Size: %lluMB\n", cardSize);
-
-#else
-// Using SPI Interface
 #ifndef SD_CS_PIN
 #error "SD_CS_PIN is not defined! Please define it for SPI connection."
 #endif
@@ -143,7 +122,6 @@ bool initSDCard() {
   else Serial.println("UNKNOWN");
   uint64_t cardSize = SD.cardSize() / (1024 * 1024);
   Serial.printf("SD Card Size (SPI): %lluMB\n", cardSize);
-#endif
 
   return true;  // Initialization successful
 }

@@ -1,86 +1,17 @@
 /*
   * Origin: https://www.instructables.com/ESP32-Mic-Testing-With-INMP441-and-DumbDisplay/
   * AI Chat: https://t3.chat/chat/8b05176e-5139-4266-93ca-87f3d6a477da
-  * This document is AI generated. But it works, Diagram: https://content.instructables.com/FG0/7OW9/LDA8Z9XU/FG07OW9LDA8Z9XU.png?auto=webp&frame=1&width=1024&height=1024&fit=bounds&md=MjAyMy0wMS0yNCAwNzo0OTozMy4w
+  * This document is AI generated. But it works, Diagram: https://content.instructables.com/FG0/7OW9/LDA8Z9XU/FG07OW9LDA8Z9XU.png
 */
 
-// I2S driver
 #include <driver/i2s.h>
-
-// --- I2S Pin Definitions based on Target Board ---
-// Select ONE of the following board definitions if needed,
-// otherwise the default pins will be used.
-// #define FOR_LILYGO_TCAMERAPLUS
-// #define FOR_LILYGO_TSIMCAM
-// #define FOR_LILYGO_TWATCH
-// #define FOR_VCC_S3EYE
-// #define FOR_VCC_S3EYE_2
-// #define FOR_XIAO_S3SENSE
-// #define FOR_ESP_SPARKBOT
-
-// INMP441 I2S pin assignment based on selected board
-#if defined(FOR_LILYGO_TCAMERAPLUS)
-  // for the mic built-in to LiLyGO TCamerPlus
-  #define I2S_WS               32
-  #define I2S_SD               33
-  #define I2S_SCK              14
-  #define I2S_SAMPLE_BIT_COUNT 32
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_0
-#elif defined(FOR_LILYGO_TSIMCAM)
-  // for the mic built-in to LiLyGO TSimCam
-  #define I2S_WS               42
-  #define I2S_SD                2
-  #define I2S_SCK              41
-  #define I2S_SAMPLE_BIT_COUNT 16
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_0
-#elif defined(FOR_LILYGO_TWATCH)
-  #define I2S_WS               0
-  #define I2S_SD               2
-  #define I2S_SCK              I2S_PIN_NO_CHANGE
-  #define I2S_SAMPLE_BIT_COUNT 16
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_0
-#elif defined(FOR_VCC_S3EYE) || defined(FOR_VCC_S3EYE_2)
-  #define I2S_WS               42
-  #define I2S_SD               2
-  #define I2S_SCK              41
-  #define I2S_SAMPLE_BIT_COUNT 16
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_0
-#elif defined(FOR_XIAO_S3SENSE)
-  #define I2S_WS               42
-  #define I2S_SD               41
-  #define I2S_SCK              I2S_PIN_NO_CHANGE
-  #define I2S_SAMPLE_BIT_COUNT 16
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_0
-#elif defined(FOR_ESP_SPARKBOT)
-  #define I2S_WS               41  // WS
-  #define I2S_SD               40  // DIN
-  #define I2S_SCK              39  // BCLK
-  #define I2S_SAMPLE_BIT_COUNT 32
-  #define SOUND_SAMPLE_RATE    16000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
-  #define I2S_PORT             I2S_NUM_1
-#else
-  // Default generic INMP441 settings
   #define I2S_WS               25
   #define I2S_SD               33
   #define I2S_SCK              32
   #define I2S_SAMPLE_BIT_COUNT 16
   #define SOUND_SAMPLE_RATE    8000
-  #define SOUND_CHANNEL_COUNT  1 // Although defined, not used in this extracted code
+  #define SOUND_CHANNEL_COUNT  1
   #define I2S_PORT             I2S_NUM_0
-#endif
-// --- End I2S Pin Definitions ---
-
 
 // --- I2S Configuration Constants ---
 const int I2S_DMA_BUF_COUNT = 8;
