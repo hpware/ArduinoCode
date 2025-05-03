@@ -113,6 +113,7 @@ void setup() {
   delay(500);
   cwa_data.clear();
 }
+
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
 void loop() {}
 
