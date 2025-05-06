@@ -154,6 +154,7 @@ void Task2(void* pvParameters) {
       //sendAudio();
       REC_ON = false;
     }
+    vTaskDelay(100);
   }
 }
 
@@ -185,92 +186,71 @@ void sendAudio(const uint8_t* audioData, size_t audioDataSize, const char* audio
 }
 // Record Audio Stuff
 void recordAudio() {
-  String filename = String("temp") + String(".wav");
-  String audioFileName = "/" + filename;
-  if (SD.exists(audioFileName)) {
-    Serial.println("Deleting existing recording file...");
-    SD.remove(audioFileName);
-  }
-  audioFile = SD.open(audioFileName, FILE_WRITE);
-  if (!SD.begin(SD_CS_PIN)) {
-    Serial.println("SD Card Failed");
-    while (!SD.begin(SD_CS_PIN)) {
-      Serial.print(".");
-      delay(100);
-    };
-    Serial.println();
-  }
-  Serial.println("Writing initial 16-bit WAV header...");
-  writeWavHeader(audioFile, 0);
-
-  totalBytesWritten = 0;
-
-  Serial.printf("Header written. Recording for %d seconds...\n", RECORD_TIME_SECONDS);
-  isRecording = true;
-  while (isRecording) {
-
-    static unsigned long recordingStartTime = millis();
-
-    if (millis() - recordingStartTime >= (RECORD_TIME_SECONDS * 1000)) {
-      Serial.println("\nRecording finished.");
-      isRecording = false;
-      Serial.println("Attempting to update WAV header...");
-      updateWavHeader(audioFile, totalBytesWritten);
-      Serial.println("Flushing file buffer...");
-      audioFile.flush();
-      audioFile.close();
-      Serial.println("SD card file closed.");
-      Serial.printf("Total audio data written: %u bytes\n", totalBytesWritten);
-      Serial.println("Entering idle state. Reset device to record again.");
+    String filename = String("temp.wav");
+    String audioFileName = "/" + filename;
+    SD.remove(audioFileName); // Force remove
+    
+    audioFile = SD.open(audioFileName, FILE_WRITE);
+    if (!audioFile) {
+        Serial.println("Failed to open file for writing");
+        return;
     }
-
-    size_t bytesRead = 0;
-    esp_err_t result = i2s_read(I2S_PORT, &StreamBuffer, StreamBufferNumBytes, &bytesRead, pdMS_TO_TICKS(100));
-
-    if (result == ESP_OK && bytesRead > 0) {
-      int samplesRead = 0;
-      int16_t sampleStreamBuffer[StreamBufferLen];
-      samplesRead = bytesRead / 2;
-      for (int i = 0; i < samplesRead; ++i) {
-
-        int16_t val16_raw = StreamBuffer[i];
-
-
-        float amplified_f = (float)val16_raw * GAIN_FACTOR;
-
-
-        if (amplified_f > 32767.0f) {
-          amplified_f = 32767.0f;
-        } else if (amplified_f < -32768.0f) {
-          amplified_f = -32768.0f;
+    
+    Serial.println("Writing initial 16-bit WAV header...");
+    writeWavHeader(audioFile, 0);
+    
+    totalBytesWritten = 0;
+    isRecording = true;
+    unsigned long recordingStartTime = millis();
+    
+    Serial.printf("Header written. Recording for %d seconds...\n", RECORD_TIME_SECONDS);
+    
+    while (isRecording) {
+        vTaskDelay(pdMS_TO_TICKS(1));  // Removed stray backslash
+        
+        if (millis() - recordingStartTime >= (RECORD_TIME_SECONDS * 1000)) {
+            break; 
         }
-
-
-        sampleStreamBuffer[i] = (int16_t)amplified_f;
-      }
-
-      size_t bytesToWrite = samplesRead * sizeof(int16_t);
-      size_t bytesWritten = audioFile.write((const uint8_t*)sampleStreamBuffer, bytesToWrite);
-
-      if (bytesWritten != bytesToWrite) {
-        Serial.println("\nSD Card Write Error! Stopping recording.");
-        isRecording = false;
-        updateWavHeader(audioFile, totalBytesWritten);
-        audioFile.flush();
-        audioFile.close();
-      } else {
-        totalBytesWritten += bytesWritten;
-        Serial.print(".");
-      }
-    } else if (result != ESP_OK) {
-      Serial.printf("\nI2S Read Error: %s\n", esp_err_to_name(result));
-      Serial.println("Stopping recording.");
-      isRecording = false;
-      updateWavHeader(audioFile, totalBytesWritten);
-      audioFile.flush();
-      audioFile.close();
+        
+        size_t bytesRead = 0;
+        esp_err_t result = i2s_read(I2S_PORT, &StreamBuffer, StreamBufferNumBytes, &bytesRead, pdMS_TO_TICKS(100));
+        
+        if (result == ESP_OK && bytesRead > 0) {
+            int samplesRead = bytesRead / 2;  // 16-bit samples
+            int16_t sampleStreamBuffer[128];  // Temporary buffer for processed samples
+            
+            // Process the audio samples
+            for (int i = 0; i < samplesRead; ++i) {
+                float amplified_f = (float)StreamBuffer[i] * GAIN_FACTOR;
+                // Clip if necessary
+                if (amplified_f > 32767.0f) amplified_f = 32767.0f;
+                if (amplified_f < -32768.0f) amplified_f = -32768.0f;
+                sampleStreamBuffer[i] = (int16_t)amplified_f;
+            }
+            
+            // Write processed samples to file
+            size_t bytesToWrite = samplesRead * sizeof(int16_t);
+            size_t bytesWritten = audioFile.write((const uint8_t*)sampleStreamBuffer, bytesToWrite);
+            
+            if (bytesWritten != bytesToWrite) {
+                Serial.println("\nSD Card Write Error!");
+                break;
+            }
+            
+            totalBytesWritten += bytesWritten;
+            Serial.print(".");
+        }
+        
+        // Feed watchdog timer
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
-  }
+    
+    // Cleanup
+    Serial.println("\nRecording finished.");
+    updateWavHeader(audioFile, totalBytesWritten);
+    audioFile.flush();
+    audioFile.close();
+    Serial.printf("Total audio data written: %u bytes\n", totalBytesWritten);
 }
 
 esp_err_t i2s_install() {
