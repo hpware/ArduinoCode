@@ -19,6 +19,7 @@
         "list": "cpp",
         "regex": "cpp",
         "xhash": "cpp",
-        "xtree": "cpp"
+        "xtree": "cpp",
+        "xlocinfo": "cpp"
     }
 }
