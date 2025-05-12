@@ -163,48 +163,113 @@ void Task2(void* pvParameters) {
 }
 // 傳送音檔給 Groq
 void sendAudio() {
-    if (!audioBuffer || audioBufferSize == 0) {
-        Serial.println("No audio data to send");
+    // Feed watchdog timer immediately
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    String filename = "/temp.wav";
+    File file = SD.open(filename, FILE_READ);
+    
+    if (!file) {
+        Serial.println("Failed to open file for reading");
         return;
     }
 
+    size_t fileSize = file.size();
+    Serial.printf("File size: %d bytes\n", fileSize);
+
+    // Feed watchdog and check WiFi
+    vTaskDelay(pdMS_TO_TICKS(10));
     if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi not connected");
+        file.close();
         return;
     }
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(30);
+    client.setTimeout(5);  // Reduced timeout
     HTTPClient http;
     
+    // Create smaller buffer in heap
+    const size_t bufferSize = 512;  // Reduced buffer size
+    uint8_t *buffer = (uint8_t*)malloc(bufferSize);
+    if (!buffer) {
+        Serial.println("Failed to allocate buffer");
+        file.close();
+        return;
+    }
+
+    // Feed watchdog before HTTP begin
+    vTaskDelay(pdMS_TO_TICKS(10));
     if (!http.begin(client, aiChatUrl)) {
         Serial.println("Failed to begin HTTP client");
+        free(buffer);
+        file.close();
         return;
     }
     
     http.addHeader("Content-Type", "audio/wav");
-    http.addHeader("Content-Length", String(audioBufferSize));
+    http.addHeader("Content-Length", String(fileSize));
     
-    int httpResponseCode = http.sendRequest("POST", (uint8_t*)audioBuffer, audioBufferSize);
+    int httpResponseCode = http.sendRequest("POST", "");
     
     if (httpResponseCode > 0) {
-        String response = http.getString();
-        Serial.println("Response Code: " + String(httpResponseCode));
-        Serial.println("Response: " + response);
+        WiFiClient* stream = http.getStreamPtr();
+        unsigned long sendStart = millis();
+        bool sendSuccess = true;
+        size_t totalSent = 0;
+        int chunksSent = 0;
+        
+        while (file.available()) {
+            // Feed watchdog every 8 chunks
+            if (++chunksSent % 8 == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            
+            size_t bytesRead = file.read(buffer, bufferSize);
+            if (bytesRead > 0) {
+                size_t bytesWritten = stream->write(buffer, bytesRead);
+                if (bytesWritten != bytesRead) {
+                    Serial.println("Write failed");
+                    sendSuccess = false;
+                    break;
+                }
+                totalSent += bytesWritten;
+                
+                // Print progress
+                if (totalSent % (bufferSize * 4) == 0) {
+                    Serial.print(".");
+                }
+                
+                // Check timeout
+                if (millis() - sendStart > 30000) { // 30 second timeout
+                    Serial.println("\nSend timeout!");
+                    sendSuccess = false;
+                    break;
+                }
+            }
+        }
+        
+        // Feed watchdog before getting response
+        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        if (sendSuccess) {
+            String response = http.getString();
+            Serial.println("\nResponse Code: " + String(httpResponseCode));
+            Serial.println("Response: " + response);
+        }
     } else {
         Serial.printf("Error sending request: %s\n", 
                      http.errorToString(httpResponseCode).c_str());
     }
     
+    // Clean up
+    free(buffer);
+    file.close();
     http.end();
     
-    // Free the buffer
-    free(audioBuffer);
-    audioBuffer = nullptr;
-    audioBufferSize = 0;
-    
     Serial.println("Transfer complete");
+    vTaskDelay(pdMS_TO_TICKS(10));  // Final watchdog feed
 }
 // Record Audio Stuff
 void recordAudio() {
