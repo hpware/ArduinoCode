@@ -8,7 +8,6 @@
 
 #include <WiFi.h>
 #include <ArduinoJson.h>
-#include "Fetch.h"
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <FS.h>
@@ -62,7 +61,7 @@ void updateWavHeader(File file, uint32_t totalDataSize);
 
 // 錄音時間與音量放大
 const int RECORD_TIME_SECONDS = 10;
-const float GAIN_FACTOR = 7.943;
+const float GAIN_FACTOR = 8;
 
 // Runner
 TaskHandle_t MainTaskC;
@@ -74,6 +73,11 @@ bool FINISHED_RECORDING = false;
 
 // Test Button Config
 #define TEST_BUTTON_PIN 13
+
+// Add these declarations at the top with other globals
+const size_t MAX_AUDIO_SIZE = 80000;  // 10 seconds of 8KHz 16-bit mono audio
+uint8_t* audioBuffer = nullptr;
+size_t audioBufferSize = 0;
 
 // 初始化
 void setup() {
@@ -140,6 +144,12 @@ void MainTask(void* pvParameters) {
       Serial.println("REC ON");
       REC_ON = true;
     }
+    if (REC_ON == true) {
+      recordAudio();
+      Serial.println("SENDING RECORDING");
+      sendAudio();
+      REC_ON = false;
+    }
     vTaskDelay(10);
   }
 }
@@ -148,109 +158,173 @@ void MainTask(void* pvParameters) {
 void Task2(void* pvParameters) {
   while (true) {
     unsigned long currentMillis = millis();
-    if (REC_ON == true) {
-      recordAudio();
-      Serial.println("SENDING RECORDING");
-      //sendAudio();
-      REC_ON = false;
-    }
-    vTaskDelay(100);
+    vTaskDelay(2000);
   }
 }
-
 // 傳送音檔給 Groq
-void sendAudio(const uint8_t* audioData, size_t audioDataSize, const char* audioContentType) {
-  WiFiClientSecure client;
-  client.setInsecure();
-  HTTPClient http;
-  http.begin(client, aiChatUrl);
-  http.addHeader("Content-Type", "application/json");
-
-  // Create a temporary non-const buffer
-  uint8_t* tempBuffer = new uint8_t[audioDataSize];
-  memcpy(tempBuffer, audioData, audioDataSize);
-
-  int httpResponseCode = http.POST(tempBuffer, audioDataSize);
-
-  // Clean up
-  delete[] tempBuffer;
-
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("Response Code: " + String(httpResponseCode));
-    Serial.println(response);
-  } else {
-    Serial.printf("Error: %s\n", http.errorToString(httpResponseCode).c_str());
-  }
-  http.end();
-}
-// Record Audio Stuff
-void recordAudio() {
-    String filename = String("temp.wav");
-    String audioFileName = "/" + filename;
-    SD.remove(audioFileName); // Force remove
+void sendAudio() {
+    // Feed watchdog timer immediately
+    vTaskDelay(pdMS_TO_TICKS(10));
     
-    audioFile = SD.open(audioFileName, FILE_WRITE);
-    if (!audioFile) {
-        Serial.println("Failed to open file for writing");
+    String filename = "/temp.wav";
+    File file = SD.open(filename, FILE_READ);
+    
+    if (!file) {
+        Serial.println("Failed to open file for reading");
+        return;
+    }
+
+    size_t fileSize = file.size();
+    Serial.printf("File size: %d bytes\n", fileSize);
+
+    // Feed watchdog and check WiFi
+    vTaskDelay(pdMS_TO_TICKS(10));
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi not connected");
+        file.close();
+        return;
+    }
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setTimeout(5);  // Reduced timeout
+    HTTPClient http;
+    
+    // Create smaller buffer in heap
+    const size_t bufferSize = 512;  // Reduced buffer size
+    uint8_t *buffer = (uint8_t*)malloc(bufferSize);
+    if (!buffer) {
+        Serial.println("Failed to allocate buffer");
+        file.close();
+        return;
+    }
+
+    // Feed watchdog before HTTP begin
+    vTaskDelay(pdMS_TO_TICKS(10));
+    if (!http.begin(client, aiChatUrl)) {
+        Serial.println("Failed to begin HTTP client");
+        free(buffer);
+        file.close();
         return;
     }
     
-    Serial.println("Writing initial 16-bit WAV header...");
-    writeWavHeader(audioFile, 0);
+    http.addHeader("Content-Type", "audio/wav");
+    http.addHeader("Content-Length", String(fileSize));
     
-    totalBytesWritten = 0;
-    isRecording = true;
+    int httpResponseCode = http.sendRequest("POST", "");
+    
+    if (httpResponseCode > 0) {
+        WiFiClient* stream = http.getStreamPtr();
+        unsigned long sendStart = millis();
+        bool sendSuccess = true;
+        size_t totalSent = 0;
+        int chunksSent = 0;
+        
+        while (file.available()) {
+            // Feed watchdog every 8 chunks
+            if (++chunksSent % 8 == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            
+            size_t bytesRead = file.read(buffer, bufferSize);
+            if (bytesRead > 0) {
+                size_t bytesWritten = stream->write(buffer, bytesRead);
+                if (bytesWritten != bytesRead) {
+                    Serial.println("Write failed");
+                    sendSuccess = false;
+                    break;
+                }
+                totalSent += bytesWritten;
+                
+                // Print progress
+                if (totalSent % (bufferSize * 4) == 0) {
+                    Serial.print(".");
+                }
+                
+                // Check timeout
+                if (millis() - sendStart > 30000) { // 30 second timeout
+                    Serial.println("\nSend timeout!");
+                    sendSuccess = false;
+                    break;
+                }
+            }
+        }
+        
+        // Feed watchdog before getting response
+        vTaskDelay(pdMS_TO_TICKS(10));
+        
+        if (sendSuccess) {
+            String response = http.getString();
+            Serial.println("\nResponse Code: " + String(httpResponseCode));
+            Serial.println("Response: " + response);
+        }
+    } else {
+        Serial.printf("Error sending request: %s\n", 
+                     http.errorToString(httpResponseCode).c_str());
+    }
+    
+    // Clean up
+    free(buffer);
+    file.close();
+    http.end();
+    
+    Serial.println("Transfer complete");
+    vTaskDelay(pdMS_TO_TICKS(10));  // Final watchdog feed
+}
+// Record Audio Stuff
+void recordAudio() {
+    // Allocate buffer in RAM
+    audioBuffer = (uint8_t*)heap_caps_malloc(MAX_AUDIO_SIZE + sizeof(WavHeader), MALLOC_CAP_SPIRAM);
+    if (!audioBuffer) {
+        Serial.println("Failed to allocate audio buffer");
+        return;
+    }
+
+    // Write WAV header
+    WavHeader header;
+    header.ByteRate = header.SampleRate * header.NumChannels * (header.BitsPerSample / 8);
+    header.BlockAlign = header.NumChannels * (header.BitsPerSample / 8);
+    memcpy(audioBuffer, &header, sizeof(WavHeader));
+    
+    audioBufferSize = sizeof(WavHeader);
     unsigned long recordingStartTime = millis();
     
-    Serial.printf("Header written. Recording for %d seconds...\n", RECORD_TIME_SECONDS);
+    Serial.printf("Recording for %d seconds...\n", RECORD_TIME_SECONDS);
     
-    while (isRecording) {
-        vTaskDelay(pdMS_TO_TICKS(1));  // Removed stray backslash
-        
+    while (true) {
         if (millis() - recordingStartTime >= (RECORD_TIME_SECONDS * 1000)) {
-            break; 
+            break;
         }
         
         size_t bytesRead = 0;
         esp_err_t result = i2s_read(I2S_PORT, &StreamBuffer, StreamBufferNumBytes, &bytesRead, pdMS_TO_TICKS(100));
         
         if (result == ESP_OK && bytesRead > 0) {
-            int samplesRead = bytesRead / 2;  // 16-bit samples
-            int16_t sampleStreamBuffer[128];  // Temporary buffer for processed samples
+            int samplesRead = bytesRead / 2;
             
-            // Process the audio samples
-            for (int i = 0; i < samplesRead; ++i) {
+            // Process and store samples
+            for (int i = 0; i < samplesRead && audioBufferSize < MAX_AUDIO_SIZE; ++i) {
                 float amplified_f = (float)StreamBuffer[i] * GAIN_FACTOR;
-                // Clip if necessary
                 if (amplified_f > 32767.0f) amplified_f = 32767.0f;
                 if (amplified_f < -32768.0f) amplified_f = -32768.0f;
-                sampleStreamBuffer[i] = (int16_t)amplified_f;
+                int16_t sample = (int16_t)amplified_f;
+                
+                memcpy(audioBuffer + audioBufferSize, &sample, sizeof(int16_t));
+                audioBufferSize += sizeof(int16_t);
             }
             
-            // Write processed samples to file
-            size_t bytesToWrite = samplesRead * sizeof(int16_t);
-            size_t bytesWritten = audioFile.write((const uint8_t*)sampleStreamBuffer, bytesToWrite);
-            
-            if (bytesWritten != bytesToWrite) {
-                Serial.println("\nSD Card Write Error!");
-                break;
-            }
-            
-            totalBytesWritten += bytesWritten;
             Serial.print(".");
         }
         
-        // Feed watchdog timer
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     
-    // Cleanup
-    Serial.println("\nRecording finished.");
-    updateWavHeader(audioFile, totalBytesWritten);
-    audioFile.flush();
-    audioFile.close();
-    Serial.printf("Total audio data written: %u bytes\n", totalBytesWritten);
+    // Update WAV header with final size
+    header.Subchunk2Size = audioBufferSize - sizeof(WavHeader);
+    header.ChunkSize = 36 + header.Subchunk2Size;
+    memcpy(audioBuffer, &header, sizeof(WavHeader));
+    
+    Serial.printf("\nRecording finished. Size: %u bytes\n", audioBufferSize);
 }
 
 esp_err_t i2s_install() {
