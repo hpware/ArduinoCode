@@ -20,9 +20,9 @@
 
 // 設定 Pin 號
 #define SD_CS_PIN 5
-#define I2S_WS 25
-#define I2S_SD 33
-#define I2S_SCK 32
+#define I2S_WS 15
+#define I2S_SD 32
+#define I2S_SCK 14
 
 // 設定 I2S
 #define I2S_SAMPLE_BIT_COUNT 16
@@ -95,6 +95,9 @@ void setup() {
 
   // SPI Setup (SD)
   SPI.begin(SCK, MISO, MOSI, SD_CS_PIN);
+  Serial.println(SCK);
+  Serial.println(MISO);
+  Serial.println(MOSI);
   pinMode(SD_CS_PIN, OUTPUT);
   digitalWrite(SD_CS_PIN, HIGH);
   if (!SD.begin(SD_CS_PIN)) {
