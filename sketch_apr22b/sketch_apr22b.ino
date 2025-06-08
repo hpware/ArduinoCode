@@ -1,6 +1,5 @@
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
-#include "Fetch.h"
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <Wire.h>
@@ -32,10 +31,10 @@
 const char *ssid = "hel";
 const char *password = "1234567890";
 // API 網址
-const char *serverUrl1 = "https://edu.yhw.tw/weather/v2/";
-const char *serverHost1 = "edu.yhw.tw";
-const char *serverUrl2 = "https://zb-logger.zeabur.app/logger/store";
-const char *serverHost2 = "zb-logger.zeabur.app";
+const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
+const char *serverHost1 = "hpg7.sch2.top";
+const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
+const char *serverHost2 = "zb-logger.sch2.top";
 String data = "";
 String h87data = "";
 bool sendData = false;
@@ -115,11 +114,12 @@ void setup() {
 }
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
-void loop() {}
+void loop() {
+  vTaskDelete(NULL);
+}
 
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
-  while (true) {
     // Read DHT sensor
     temp = dht_sensor.readTemperature();
     hum = dht_sensor.readHumidity();
@@ -141,7 +141,6 @@ void MainTaskC(void *pvParameters) {
         }
       }
     }
-  }
 }
 
 void SendTaskC(void *pvParameters) {
@@ -157,7 +156,7 @@ void SendTaskC(void *pvParameters) {
     }
     // Send local data
     sssdata();
-    vTaskDelay(1000);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
