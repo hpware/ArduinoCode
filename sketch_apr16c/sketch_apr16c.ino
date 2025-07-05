@@ -1,6 +1,5 @@
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
-#include "Fetch.h"
 #include <ArduinoJson.h>
 #include <DHT.h>
 #include <Wire.h>
@@ -28,7 +27,7 @@ const char *ssid = "hel";
 const char *password = "1234567890";
 // API 網址
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
-const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
+const char *serverUrl2 = "http://192.168.1.27:3000/device_store/75cb2ff9-03b1-4bc8-afda-3dfc4af33825"; // The URL you get in the creation dashboard
 
 // --- Re-introduced global 'data' string to cache raw weather JSON ---
 String data = "{\"weather\":\"晴\",\"temperature\":25,\"humidity\":60,\"location\":\"臺北市士林區\",\"daliyHigh\":26,\"daliyLow\":15}"; // Default value

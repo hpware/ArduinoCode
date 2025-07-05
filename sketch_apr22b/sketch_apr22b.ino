@@ -33,8 +33,9 @@ const char *password = "1234567890";
 // API 網址
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
 const char *serverHost1 = "hpg7.sch2.top";
-const char *serverUrl2 = "https://zb-logger.sch2.top/logger/store";
-const char *serverHost2 = "zb-logger.sch2.top";
+const char *serverUrl2 = "https://logger-v2.sch2.top/device_store/c21ba5ce-92a9-4505-a40f-8084a4d61565";
+const char *serverHost2 = "logger.sch2.top";
+const char *deviceId = "c21ba5ce-92a9-4505-a40f-8084a4d61565";
 String data = "";
 String h87data = "";
 bool sendData = false;
@@ -115,20 +116,22 @@ void setup() {
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
 void loop() {
-  vTaskDelete(NULL);
 }
 
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
+  while (true) {
     // Read DHT sensor
     temp = dht_sensor.readTemperature();
     hum = dht_sensor.readHumidity();
     // Read Hub 8735 serial data
     if (H87_Serial.available()) {
       String data = H87_Serial.readStringUntil('\n');
-      Serial.print("Hub 8735 data: ");
-      h87data = data;
-      Serial.println(h87data);
+      if (data.length() > 0 && isPrintable(data[0])) {
+        Serial.print("Hub 8735 data: ");
+        h87data = data;
+        Serial.println(h87data);
+      }
     }
     // Read GPS serial data
     if (GPS_Serial.available()) {
@@ -141,6 +144,8 @@ void MainTaskC(void *pvParameters) {
         }
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
 }
 
 void SendTaskC(void *pvParameters) {
@@ -214,8 +219,8 @@ for (size_t i = 0; i < localDetect.size(); ++i) {
 
   jsonObject += "]}";  // Close the array and the main object
 
-
-  client.println(String("POST ") + "/logger/store" + " HTTP/1.1");
+  Serial.println(String("POST ") + "/api/device_store/" + deviceId + " HTTP/1.1");
+  client.println(String("POST ") + "/api/device_store/" + deviceId + " HTTP/1.1");
   client.println(String("Host: ") + serverHost2);
   client.println("Connection: close\r\nContent-Type: application/json");
   client.print("Content-Length: ");
