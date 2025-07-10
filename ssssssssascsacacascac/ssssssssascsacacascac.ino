@@ -1,12 +1,3 @@
-/**
- * Sources: 
- * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/ 
- * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
- * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
- * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
- * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
-*/
-// 函示庫
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
 #include <ArduinoJson.h>
@@ -16,7 +7,16 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-// 設定溫濕度、繼電器與紅外線的PIN
+
+/**
+ * Sources: 
+ * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/ 
+ * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
+ * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
+ * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
+ * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
+*/
+
 #define DHT_SENSOR_PIN 33
 #define DHT_SENSOR_TYPE DHT11
 #define JIPOWER_PIN 25
@@ -27,23 +27,16 @@
 #define I2C_SCL_PIN 22
 #define OTI602_ADDR 0x10
 
-// 設定
 // WiFi 設定
 const char *ssid = "hel";
 const char *password = "1234567890";
-// API 網址 (必須要是 HTTPS!!!)
-// 氣象局伺服器
-const char *serverUrl1 = "";  //　網址應該是 https://<<你的主機>>/weather/
-// 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "";                   // 主機
-const char *deviceId = "";  // 裝置 ID
-// 開啟接收資料 (如果全關資料皆都會是假的!)
-const bool tempHumInfo = false;
-const bool enableHub8735 = false;
-const bool enableGPS = false;
-
-// 下方資料不要改!!!!
-// 資料
+// API 網址
+const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";
+const char *serverHost1 = "hpg7.sch2.top";
+const char *serverHost2 = "logger-v2.vercel
+.app";
+const char *deviceId = "b9186021-40da-40f4-83c0-af06396cccb7";
+String ImageId = "";
 String data = "";
 String h87data = "";
 bool sendData = false;
@@ -70,12 +63,6 @@ float cwa_temp_low = 0;
 const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
-const char *serverUrl2 = "";  // 舊版
-
-// TaskHandle
-TaskHandle_t MainTask;
-TaskHandle_t SendTask;
-
 TinyGPSPlus gps;
 //WiFiClient client;
 HardwareSerial GPS_Serial(1);  // GPS 連接
@@ -101,71 +88,12 @@ void setup() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);
   // init task
-  xTaskCreatePinnedToCore(
-    MainTaskC,   // Task function that it should be using (also don't use the same name as the task handle name, it won't work at all)
-    "MainTask",  // Task name
-    10000,       // Stack size
-    NULL,        // param of the task
-    1,           // priority of the task
-    &MainTask,   // task hnalde to keep track
-    0            // use core 0
-  );
-  delay(500);
-  xTaskCreatePinnedToCore(
-    SendTaskC,
-    "SendTask",
-    10000,
-    NULL,
-    1,
-    &SendTask,
-    1);
   delay(500);
   cwa_data.clear();
 }
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
 void loop() {
-}
-
-// use while(true) or while(1) to loop. (and not crash)
-void MainTaskC(void *pvParameters) {
-  while (true) {
-    // Read DHT sensor
-    if (tempHumInfo == true) {
-      temp = dht_sensor.readTemperature();
-      hum = dht_sensor.readHumidity();
-    }
-    // Read Hub 8735 serial data
-    if (enableHub8735 == true) {
-      if (H87_Serial.available()) {
-        String data = H87_Serial.readStringUntil('\n');
-        if (data.length() > 0 && isPrintable(data[0])) {
-          Serial.print("Hub 8735 data: ");
-          h87data = data;
-          Serial.println(h87data);
-        }
-      }
-    }
-    // Read GPS serial data
-    if (enableGPS == true) {
-      if (GPS_Serial.available()) {
-        if (GPS_Serial.read() > 0) {
-          if (gps.encode(GPS_Serial.read())) {
-            if (gps.location.isValid()) {
-              gpsLat = String(gps.location.lat());
-              gpsLong = String(gps.location.lng());
-            }
-          }
-        }
-      }
-    }
-    
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-}
-
-void SendTaskC(void *pvParameters) {
-  while (true) {
     unsigned long currentMillis = millis();
     // Send weather request
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
@@ -177,13 +105,12 @@ void SendTaskC(void *pvParameters) {
     }
     // Send local data
     sssdata();
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
 }
 
+
 void sssdata() {
-  // 設定預設值
-  String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
+  getId();
+    String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
   String cwaLocation = cwa_data.containsKey("location") ? cwa_data["location"].as<String>() : "臺北市士林區";
   float cwaTemp = 23.5;
   int cwaHum = 89;
@@ -196,12 +123,13 @@ void sssdata() {
   String localTime = "2024-03-20 15:30:00";
   bool localJistatus = isJiPowerOn;
   bool localLedStatus = isLedPowerOn;
+  String localDetect = "獨角仙";
 
   if (cwa_data.containsKey("location")) {
-    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99 && cwa_data["temperature"] != 2147483647) {
+    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99) {
       cwaTemp = cwa_data["temperature"].as<float>();
     }
-    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99 && cwa_data["temperature"] != 2147483647) {
+    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99) {
       cwaHum = cwa_data["humidity"].as<int>();
     }
     if (!cwa_data["dailyHigh"].isNull() && cwa_data["dailyHigh"] != -99) {
@@ -211,17 +139,19 @@ void sssdata() {
       cwaDailyLow = cwa_data["daliyLow"].as<int>();
     }
   }
-  // 開始傳送
   WiFiClientSecure client;
-  client.setInsecure();                   // 可以接收尚未被接受的SSL憑證
-  unsigned long connectStart = millis();  // 時間
+  client.setInsecure();
+
+  // Try to connect with timeout
+  unsigned long connectStart = millis();
   while (!client.connect(serverHost2, 443)) {
-    if (millis() - connectStart > 5000) {  // 5秒
+    if (millis() - connectStart > 5000) {  // 5 second timeout
       Serial.println("Connection failed");
       return;
     }
     delay(100);
   }
+
   // Create the JSON object using ArduinoJson instead of string concatenation
   StaticJsonDocument<1024> doc;
   doc["cwa_type"] = cwaType;
@@ -237,8 +167,13 @@ void sssdata() {
   doc["local_time"] = "2024-03-20 15:30:00";
   doc["local_jistatus"] = isJiPowerOn;
   doc["local_detect"] = JsonArray();
+  JsonArray imageArray = doc.createNestedArray("image");
+  imageArray.add(ImageId);
+
   String jsonString;
   serializeJson(doc, jsonString);
+
+  // Send HTTP request
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
   client.println("Host: " + String(serverHost2));
   client.println("Connection: close");
@@ -247,6 +182,8 @@ void sssdata() {
   client.println(jsonString.length());
   client.println();
   client.print(jsonString);
+
+  // Wait for response with proper timeout
   unsigned long timeout = millis();
   while (!client.available()) {
     if (millis() - timeout > 5000) {
@@ -270,7 +207,7 @@ void sssdata() {
     String body = response.substring(bodyStart);
     DynamicJsonDocument respDoc(512);
     DeserializationError error = deserializeJson(respDoc, body);
-
+    
     if (!error) {
       if (respDoc.containsKey("jistatus")) {
         isJiPowerOn = respDoc["jistatus"].as<bool>();
@@ -280,14 +217,29 @@ void sssdata() {
         isLedPowerOn = respDoc["ledstatus"].as<bool>();
         digitalWrite(LED_PIN, isLedPowerOn);
       }
-      Serial.println("✅");
+      Serial.println("✅ Response processed successfully");
     }
   }
 
   client.stop();
 }
 
-// 存取氣象局資料
+void getId() {
+  HTTPClient http;
+  String serverPath = "https://hpg7.sch2.top/imgIdDl.txt";
+  http.begin(serverPath.c_str());
+  int httpResponseCode = http.GET();
+  if (httpResponseCode > 0) {
+    String payload = http.getString();
+    Serial.println(payload);
+    ImageId = payload;
+  } else {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  http.end();
+}
+
 void getWeatherData() {
   HTTPClient http;
   String latlat = (gpsLat.length() > 0) ? gpsLat : defaultlat;
