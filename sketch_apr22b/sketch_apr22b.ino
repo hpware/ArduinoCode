@@ -40,7 +40,7 @@ const char *serverHost2 = "livenet.sch2.top";                   // 主機
 const char *deviceId = "c21ba5ce-92a9-4505-a40f-8084a4d61565";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
-const bool enableHub8735 = false; // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
+const bool enableHub8735 = false;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
 const bool enableGPS = true;
 
 // 下方資料不要改!!!!
@@ -159,7 +159,7 @@ void MainTaskC(void *pvParameters) {
         }
       }
     }
-    
+
     vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
