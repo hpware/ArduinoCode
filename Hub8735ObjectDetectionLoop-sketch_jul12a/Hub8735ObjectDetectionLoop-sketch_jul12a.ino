@@ -1,5 +1,4 @@
 // DEVICE: HUB8735 ULTRA USING REALTEK RTL8735B
-// Vibes (vibe coded)
 /*
 
  Example guide:
@@ -23,13 +22,13 @@
  No model             NA_MODEL
  */
 
- #include "WiFi.h"
- #include "StreamIO.h"
- #include "VideoStream.h"
- #include "NNObjectDetection.h"
- #include "VideoStreamOverlay.h"
- #include "ObjectClassList.h"
- 
+#include "WiFi.h"
+#include "StreamIO.h"
+#include "VideoStream.h"
+#include "RTSP.h"
+#include "NNObjectDetection.h"
+#include "VideoStreamOverlay.h"
+#include "ObjectClassList.h"
 
 #define CHANNEL   0
 #define CHANNELNN 3
@@ -41,10 +40,9 @@
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
 NNObjectDetection ObjDet;
-WiFiServer server(80);
+RTSP rtsp;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
-
 
 char ssid[] = "hel";    // your network SSID (name)
 char pass[] = "1234567890";        // your network password
@@ -53,32 +51,6 @@ int status = WL_IDLE_STATUS;
 IPAddress ip;
 int rtsp_portnum;
 
-
-void handleMjpegStream() {
-    WiFiClient client = server.available();
-    if (client) {
-        // Send HTTP headers
-        client.println("HTTP/1.1 200 OK");
-        client.println("Content-Type: multipart/x-mixed-replace; boundary=frame");
-        client.println();
-        
-        while (client.connected()) {
-            uint8_t* frameBuffer = NULL;
-            size_t frameSize = 0;
-            
-            // Wait for new frame
-            if (videoStreamer.getStream(CHANNEL, &frameBuffer, &frameSize) > 0) {
-                if (frameBuffer && frameSize > 0) {
-                    client.print("--frame\r\n");
-                    client.print("Content-Type: image/jpeg\r\n\r\n");
-                    client.write(frameBuffer, frameSize);
-                    client.print("\r\n");
-                }
-            }
-            delay(30);
-        }
-    }
-}
 void setup()
 {
     Serial.begin(115200);
@@ -101,9 +73,10 @@ void setup()
     Camera.configVideoChannel(CHANNELNN, configNN);
     Camera.videoInit();
 
-    server.begin();
-    Serial.print("HTTP server started at http://");
-    Serial.println(ip);
+    // Configure RTSP with corresponding video format information
+    rtsp.configVideo(config);
+    rtsp.begin();
+    rtsp_portnum = rtsp.getPort();
 
     // Configure object detection with corresponding video format information
     // Select Neural Network(NN) task and models
@@ -140,14 +113,17 @@ void setup()
 
 void loop()
 {
-
-    handleMjpegStream();
     std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
     uint16_t im_h = config.height();
     uint16_t im_w = config.width();
 
-    Serial.println(ip);
+    Serial.print("Network URL for RTSP Streaming: ");
+    Serial.print("rtsp://");
+    Serial.print(ip);
+    Serial.print(":");
+    Serial.println(rtsp_portnum);
+    Serial.println(" ");
 
     printf("Total number of objects detected = %d\r\n", ObjDet.getResultCount());
     OSD.createBitmap(CHANNEL);
