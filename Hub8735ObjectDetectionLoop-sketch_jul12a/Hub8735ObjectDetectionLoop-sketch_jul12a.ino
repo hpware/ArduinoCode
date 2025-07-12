@@ -1,27 +1,4 @@
 // DEVICE: HUB8735 ULTRA USING REALTEK RTL8735B
-/*
-
- Example guide:
- https://www.amebaiot.com/en/amebapro2-arduino-neuralnework-object-detection/
-
- NN Model Selection
- Select Neural Network(NN) task and models using modelSelect(nntask, objdetmodel, facedetmodel, facerecogmodel).
- Replace with NA_MODEL if they are not necessary for your selected NN Task.
-
- NN task
- =======
- OBJECT_DETECTION/ FACE_DETECTION/ FACE_RECOGNITION
-
- Models
- =======
- YOLOv3 model         DEFAULT_YOLOV3TINY   / CUSTOMIZED_YOLOV3TINY
- YOLOv4 model         DEFAULT_YOLOV4TINY   / CUSTOMIZED_YOLOV4TINY
- YOLOv7 model         DEFAULT_YOLOV7TINY   / CUSTOMIZED_YOLOV7TINY
- SCRFD model          DEFAULT_SCRFD        / CUSTOMIZED_SCRFD
- MobileFaceNet model  DEFAULT_MOBILEFACENET/ CUSTOMIZED_MOBILEFACENET
- No model             NA_MODEL
- */
-
 #include "WiFi.h"
 #include "StreamIO.h"
 #include "VideoStream.h"
@@ -32,20 +9,17 @@
 
 #define CHANNEL   0
 #define CHANNELNN 3
-
-// Lower resolution for NN processing
 #define NNWIDTH  576
 #define NNHEIGHT 320
-
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
 NNObjectDetection ObjDet;
 RTSP rtsp;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
-
-char ssid[] = "hel";    // your network SSID (name)
-char pass[] = "1234567890";        // your network password
+// 設定
+char ssid[] = "hel"; // SSID
+char pass[] = "1234567890"; // 密碼
 int status = WL_IDLE_STATUS;
 
 IPAddress ip;
