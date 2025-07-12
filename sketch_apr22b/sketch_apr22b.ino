@@ -6,6 +6,7 @@
  * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
  * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
 */
+
 // 函示庫
 #include <TinyGPS++.h>
 #include <HardwareSerial.h>
@@ -33,14 +34,14 @@ const char *ssid = "hel";
 const char *password = "1234567890";
 // API 網址 (必須要是 HTTPS!!!)
 // 氣象局伺服器
-const char *serverUrl1 = "";  //　網址應該是 https://<<你的主機>>/weather/
+const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";  //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "";                   // 主機
-const char *deviceId = "";  // 裝置 ID
-// 開啟接收資料 (如果全關資料皆都會是假的!)
-const bool tempHumInfo = false;
-const bool enableHub8735 = false;
-const bool enableGPS = false;
+const char *serverHost2 = "livenet.sch2.top";                   // 主機
+const char *deviceId = "c21ba5ce-92a9-4505-a40f-8084a4d61565";  // 裝置 ID
+// 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
+const bool tempHumInfo = true;
+const bool enableHub8735 = false; // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
+const bool enableGPS = true;
 
 // 下方資料不要改!!!!
 // 資料
@@ -124,8 +125,7 @@ void setup() {
 }
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
-void loop() {
-}
+void loop() {}
 
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
@@ -193,15 +193,15 @@ void sssdata() {
   int localHum = hum;
   String localGpsLat = gpsLat.length() > 0 ? gpsLat : defaultlat;
   String localGpsLong = gpsLong.length() > 0 ? gpsLong : defaultlong;
-  String localTime = "2024-03-20 15:30:00";
+  String localTime = "2025-07-12 10:15:00";
   bool localJistatus = isJiPowerOn;
   bool localLedStatus = isLedPowerOn;
 
   if (cwa_data.containsKey("location")) {
-    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99 && cwa_data["temperature"] != 2147483647) {
+    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99) {
       cwaTemp = cwa_data["temperature"].as<float>();
     }
-    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99 && cwa_data["temperature"] != 2147483647) {
+    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99) {
       cwaHum = cwa_data["humidity"].as<int>();
     }
     if (!cwa_data["dailyHigh"].isNull() && cwa_data["dailyHigh"] != -99) {
