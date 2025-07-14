@@ -26,79 +26,94 @@ IPAddress ip;
 int rtsp_portnum;
 
 class Base64Encoder {
-  private:
-      const char* base64_chars = 
-          "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-          "abcdefghijklmnopqrstuvwxyz"
-          "0123456789+/";
-  
-  public:
-      int encodedLength(size_t length) {
-          return 4 * ((length + 2) / 3);
-      }
-      
-      void encode(char* output, const char* input, size_t length) {
-          int i = 0, j = 0;
-          unsigned char char_array_3[3];
-          unsigned char char_array_4[4];
-  
-          while (length--) {
-              char_array_3[i++] = *(input++);
-              if (i == 3) {
-                  char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-                  char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-                  char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-                  char_array_4[3] = char_array_3[2] & 0x3f;
-  
-                  for(i = 0; i < 4; i++)
-                      output[j++] = base64_chars[char_array_4[i]];
-                  i = 0;
-              }
-          }
-  
-          if (i) {
-              for(int k = i; k < 3; k++)
-                  char_array_3[k] = '\0';
-  
-              char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-              char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-              char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-  
-              for (int k = 0; k < i + 1; k++)
-                  output[j++] = base64_chars[char_array_4[k]];
-  
-              while(i++ < 3)
-                  output[j++] = '=';
-          }
-          output[j] = '\0';
-      }
-  };
-  
-  // Replace Base64 instance with Base64Encoder
-  Base64Encoder base64;
-  
-  // Modify capImageBase64() function to use new encoder
-  String capImageBase64() {
-      String base64Image = "";
-      uint32_t addr = 0;
-      uint32_t len = 0;
-      Camera.getImage(CHANNEL, &addr, &len);
-  
-      if (addr && len > 0) {
-          uint8_t* imageData = (uint8_t*)addr;
-          int encodedLen = base64.encodedLength(len);
-          char* encodedBuffer = new char[encodedLen + 1];
-          
-          base64.encode(encodedBuffer, (char*)imageData, len);
-          base64Image = String(encodedBuffer);
-          
-          delete[] encodedBuffer;
-      } else {
-          Serial.println("Failed to capture image");
-      }
-  
-      return base64Image;
+private:
+  const char* base64_chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+public:
+  int encodedLength(size_t length) {
+    return 4 * ((length + 2) / 3);
   }
+
+  void encode(char* output, const char* input, size_t length) {
+    int i = 0, j = 0;
+    unsigned char char_array_3[3];
+    unsigned char char_array_4[4];
+
+    while (length--) {
+      char_array_3[i++] = *(input++);
+      if (i == 3) {
+        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+        char_array_4[3] = char_array_3[2] & 0x3f;
+
+        for (i = 0; i < 4; i++)
+          output[j++] = base64_chars[char_array_4[i]];
+        i = 0;
+      }
+    }
+
+    if (i) {
+      for (int k = i; k < 3; k++)
+        char_array_3[k] = '\0';
+
+      char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
+      char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
+      char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
+
+      for (int k = 0; k < i + 1; k++)
+        output[j++] = base64_chars[char_array_4[k]];
+
+      while (i++ < 3)
+        output[j++] = '=';
+    }
+    output[j] = '\0';
+  }
+};
+
+// Replace Base64 instance with Base64Encoder
+Base64Encoder base64;
+
+// Modify capImageBase64() function to use new encoder
+String capImageBase64() {
+    uint32_t addr = 0;
+    uint32_t len = 0;
+    String base64Image = "";
+
+    // Get image
+    Camera.getImage(CHANNEL, &addr, &len);
+
+    // Check if we got valid image data
+    if (addr && len > 0) {
+        uint8_t* imageData = (uint8_t*)addr;
+        int encodedLen = base64.encodedLength(len);
+        
+        // Allocate memory for encoded data
+        char* encodedBuffer = new char[encodedLen + 1];
+        if (encodedBuffer == nullptr) {
+            Serial.println("Memory allocation failed");
+            return "";
+        }
+
+        // Encode image
+        base64.encode(encodedBuffer, (char*)imageData, len);
+        base64Image = String(encodedBuffer);
+        
+        // Clean up
+        delete[] encodedBuffer;
+        
+        if (base64Image.length() > 0) {
+            Serial.println("Image captured successfully");
+            return base64Image;
+        }
+    }
+
+    Serial.println("Failed to capture image");
+    return "";
+}
 
 void setup() {
   Serial.begin(115200);
@@ -166,14 +181,14 @@ void loop() {
 
   uint16_t im_h = config.height();
   uint16_t im_w = config.width();
-
+/*
   Serial.print("rtsp://");
   Serial.print(ip);
   Serial.print(":");
   Serial.println(rtsp_portnum);
-  Serial.println(" ");
+  Serial.println(" ");*/
 
-  printf("Total number of objects detected = %d\r\n", ObjDet.getResultCount());
+  //printf("Total number of objects detected = %d\r\n", ObjDet.getResultCount());
   OSD.createBitmap(CHANNEL);
 
   if (ObjDet.getResultCount() > 0) {
@@ -194,7 +209,7 @@ void loop() {
         int ymax = (int)(item.yMax() * im_h);
 
         // Draw boundary box
-        printf("Item %d %s:\t%d %d %d %d\n\r", i, itemList[obj_type].objectName, xmin, xmax, ymin, ymax);
+        //printf("Item %d %s:\t%d %d %d %d\n\r", i, itemList[obj_type].objectName, xmin, xmax, ymin, ymax);
         OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
 
         // Print identification text

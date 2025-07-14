@@ -37,10 +37,10 @@ const char *password = "1234567890";
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";  //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
 const char *serverHost2 = "livenet.sch2.top";                   // 主機
-const char *deviceId = "c21ba5ce-92a9-4505-a40f-8084a4d61565";  // 裝置 ID
+const char *deviceId = "ec24af39-81a6-43fa-a90a-96a98da9cc6f";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
-const bool enableHub8735 = false;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
+const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
 const bool enableGPS = true;
 
 // 下方資料不要改!!!!
@@ -85,7 +85,7 @@ DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 void setup() {
   Serial.begin(115200);
   GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
-  H87_Serial.begin(9600, SERIAL_8N1, 26, 27);
+  H87_Serial.begin(115200, SERIAL_8N1, 26, 27);
   Serial.println("Setup");
   // setup hum and temp sensor
   dht_sensor.begin();
@@ -222,7 +222,6 @@ void sssdata() {
     }
     delay(100);
   }
-  // Create the JSON object using ArduinoJson instead of string concatenation
   StaticJsonDocument<1024> doc;
   doc["cwa_type"] = cwaType;
   doc["cwa_location"] = cwaLocation;
@@ -237,6 +236,7 @@ void sssdata() {
   doc["local_time"] = "2024-03-20 15:30:00";
   doc["local_jistatus"] = isJiPowerOn;
   doc["local_detect"] = JsonArray();
+  doc["testing"] = h87data;
   String jsonString;
   serializeJson(doc, jsonString);
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
