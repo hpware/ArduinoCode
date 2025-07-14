@@ -79,48 +79,95 @@ Base64Encoder base64;
 
 // Modify capImageBase64() function to use new encoder
 String capImageBase64() {
-    uint32_t addr = 0;
-    uint32_t len = 0;
-    String base64Image = "";
+  static unsigned long lastCapture = 0;
+  const unsigned long CAPTURE_INTERVAL = 1000;  // Increase interval to 1 second
 
-    // Get image
+  if (millis() - lastCapture < CAPTURE_INTERVAL) {
+    return "";
+  }
+
+  uint32_t addr = 0;
+  uint32_t len = 0;
+
+  // Try to capture without stopping channel
+  Serial.println("Attempting direct capture...");
+  Camera.getImage(CHANNEL, &addr, &len);
+
+  if (!addr || len == 0) {
+    Serial.println("Direct capture failed, trying with channel stop...");
+
+    // Stop streaming
+    Camera.channelEnd(CHANNEL);
+    delay(200);  // Increase delay
+
+    // Clear any pending commands
+    Camera.videoInit();
+    delay(100);
+
+    // Try capture again
     Camera.getImage(CHANNEL, &addr, &len);
 
-    // Check if we got valid image data
-    if (addr && len > 0) {
-        uint8_t* imageData = (uint8_t*)addr;
-        int encodedLen = base64.encodedLength(len);
-        
-        // Allocate memory for encoded data
-        char* encodedBuffer = new char[encodedLen + 1];
-        if (encodedBuffer == nullptr) {
-            Serial.println("Memory allocation failed");
-            return "";
-        }
+    // Restart streaming regardless of result
+    Camera.channelBegin(CHANNEL);
 
-        // Encode image
-        base64.encode(encodedBuffer, (char*)imageData, len);
-        base64Image = String(encodedBuffer);
-        
-        // Clean up
-        delete[] encodedBuffer;
-        
-        if (base64Image.length() > 0) {
-            Serial.println("Image captured successfully");
-            return base64Image;
-        }
+    if (!addr || len == 0) {
+      Serial.println("Both capture attempts failed");
+      return "";
+    }
+  }
+
+  Serial.print("Capture success - length: ");
+  Serial.println(len);
+
+  String base64Image = "";
+  int encodedLen = base64.encodedLength(len);
+  char* encodedBuffer = new char[encodedLen + 1];
+
+  if (encodedBuffer) {
+    base64.encode(encodedBuffer, (char*)addr, len);
+    base64Image = String(encodedBuffer);
+    delete[] encodedBuffer;
+    Serial.print("Encoded length: ");
+    Serial.println(base64Image.length());
+  }
+
+  lastCapture = millis();
+  return base64Image;
+}
+
+void loop() {
+  std::vector<ObjectDetectionResult> results = ObjDet.getResult();
+  int objCount = ObjDet.getResultCount();
+
+  if (objCount > 0) {
+    static unsigned long lastDetection = 0;
+    const unsigned long DETECTION_INTERVAL = 2000;  // Increase to 2 seconds
+
+    Serial.print("Objects detected: ");
+    Serial.println(objCount);
+
+    if (millis() - lastDetection >= DETECTION_INTERVAL) {
+      String base64Image = capImageBase64();
+      if (base64Image.length() > 0) {
+        Serial.println("Sending image data...");
+        Serial2.print("FILE_");
+        Serial2.println(base64Image);
+        lastDetection = millis();
+      }
     }
 
-    Serial.println("Failed to capture image");
-    return "";
+    drawDetectionBoxes(results);
+  }
+
+  OSD.update(CHANNEL);
+  delay(200);  // Increase main loop delay
 }
 
 void setup() {
   Serial.begin(115200);
   Serial2.begin(115200);
-  Serial2.println("OK");
+  Serial.println("Starting setup...");
 
-  // attempt to connect to Wifi network:
   while (status != WL_CONNECTED) {
     Serial.print("Attempting to connect to WPA SSID: ");
     Serial.println(ssid);
@@ -130,13 +177,29 @@ void setup() {
     delay(2000);
   }
   ip = WiFi.localIP();
+  // Camera setup with more explicit configuration
+  config.setBitrate(2 * 1024 * 1024);
+  config.setFPS(15);  // Reduce FPS
+  config.setQuality(95);
 
-  // Configure camera video channels with video format information
-  // Adjust the bitrate based on your WiFi network quality
-  config.setBitrate(2 * 1024 * 1024);  // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
   Camera.configVideoChannel(CHANNEL, config);
   Camera.configVideoChannel(CHANNELNN, configNN);
-  Camera.videoInit();
+
+  if (Camera.videoInit()) {
+    Serial.println("Camera initialized");
+    delay(1000);  // Warm-up delay
+
+    // Set additional camera parameters
+    Camera.setImageQuality(CHANNEL, 95);
+    Camera.setFrameRate(CHANNEL, 15);
+    delay(500);
+
+    Camera.channelBegin(CHANNEL);
+    delay(500);
+  } else {
+    Serial.println("Camera init failed!");
+    while (1) delay(1000);
+  }
 
   // Configure RTSP with corresponding video format information
   rtsp.configVideo(config);
@@ -174,51 +237,77 @@ void setup() {
   // Start OSD drawing on RTSP video channel
   OSD.configVideo(CHANNEL, config);
   OSD.begin();
+  Serial.println("--- Setup Complete ---");
+  Serial.print("Resolution: ");
+  Serial.print(NNWIDTH);
+  Serial.print("x");
+  Serial.println(NNHEIGHT);
+  Serial.print("Video Format: RGB (");
+  Serial.print(VIDEO_RGB);
+  Serial.println(")");
+  Serial.println("----------------------");
+
+  Serial.println("Setup complete!");
 }
 
 void loop() {
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
-  uint16_t im_h = config.height();
-  uint16_t im_w = config.width();
-/*
-  Serial.print("rtsp://");
-  Serial.print(ip);
-  Serial.print(":");
-  Serial.println(rtsp_portnum);
-  Serial.println(" ");*/
-
-  //printf("Total number of objects detected = %d\r\n", ObjDet.getResultCount());
-  OSD.createBitmap(CHANNEL);
-
   if (ObjDet.getResultCount() > 0) {
-    String base64Image = capImageBase64();
-    Serial2.print("FILE_");
-    Serial2.println(base64Image);
+    static unsigned long lastDetection = 0;
+    const unsigned long DETECTION_INTERVAL = 1000;
 
-    for (int i = 0; i < ObjDet.getResultCount(); i++) {
-      int obj_type = results[i].type();
-      if (itemList[obj_type].filter) {  // check if item should be ignored
+    Serial.print("Objects detected: ");
+    Serial.println(ObjDet.getResultCount());
 
-        ObjectDetectionResult item = results[i];
-        // Result coordinates are floats ranging from 0.00 to 1.00
-        // Multiply with RTSP resolution to get coordinates in pixels
-        int xmin = (int)(item.xMin() * im_w);
-        int xmax = (int)(item.xMax() * im_w);
-        int ymin = (int)(item.yMin() * im_h);
-        int ymax = (int)(item.yMax() * im_h);
-
-        // Draw boundary box
-        //printf("Item %d %s:\t%d %d %d %d\n\r", i, itemList[obj_type].objectName, xmin, xmax, ymin, ymax);
-        OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
-
-        // Print identification text
-        char text_str[20];
-        snprintf(text_str, sizeof(text_str), "%s %d", itemList[obj_type].objectName, item.score());
-        OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
+    if (millis() - lastDetection >= DETECTION_INTERVAL) {
+      String base64Image = capImageBase64();
+      if (base64Image.length() > 0) {
+        Serial.println("Sending image data...");
+        Serial2.print("FILE_");
+        Serial2.println(base64Image);
+        lastDetection = millis();
       }
     }
+
+    drawDetectionBoxes(results);
   }
+
   OSD.update(CHANNEL);
   delay(100);
+}
+
+void drawDetectionBoxes(const std::vector<ObjectDetectionResult>& results) {
+  uint16_t im_h = config.height();
+  uint16_t im_w = config.width();
+
+  OSD.createBitmap(CHANNEL);
+
+  for (size_t i = 0; i < results.size(); i++) {
+    // Create a non-const copy to work with the non-const methods
+    ObjectDetectionResult item = results[i];
+    int obj_type = item.type();
+
+    if (itemList[obj_type].filter) {
+      int xmin = (int)(item.xMin() * im_w);
+      int xmax = (int)(item.xMax() * im_w);
+      int ymin = (int)(item.yMin() * im_h);
+      int ymax = (int)(item.yMax() * im_h);
+
+      Serial.print("Object ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.println(itemList[obj_type].objectName);
+
+      OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
+
+      char text_str[20];
+      snprintf(text_str, sizeof(text_str), "%s %d",
+               itemList[obj_type].objectName,
+               item.score());
+      OSD.drawText(CHANNEL, xmin,
+                   ymin - OSD.getTextHeight(CHANNEL),
+                   text_str, OSD_COLOR_CYAN);
+    }
+  }
 }
