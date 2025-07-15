@@ -137,6 +137,14 @@ void setup() {
 }
 
 void loop() {
+  try {
+    if (Serial2.available()) {
+      String esp32Data = H87_Serial.readStringUntil('\n');
+    }
+
+  } catch (...) {
+    Serial.println("Exception caught in Serial2");
+  }
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
   uint16_t im_h = config.height(); // OSD is configured for CHANNEL 0 (FHD)
