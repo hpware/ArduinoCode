@@ -6,17 +6,26 @@
 #include "NNObjectDetection.h"
 #include "VideoStreamOverlay.h"
 #include "ObjectClassList.h"
-#include "Base64.h" // Make sure this library provides a suitable base64_encode function for buffers.
+#include "Base64.h"
 
 #include <algorithm> // Required for std::min
 
-#define CHANNEL 0
-#define CHANNELNN 3 // Channel used for NN input
+#define CHANNEL 0    // H264 RTSP Stream
+#define CHANNELNN 3  // RGB Stream for Neural Network
+#define CHANNEL_STILL 1 // NEW: Dedicated channel for still JPEG capture
+
 #define NNWIDTH 576
 #define NNHEIGHT 320
 
+// VideoSetting for H264 RTSP stream
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
-VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0); // RGB channel for NN input
+// VideoSetting for RGB stream to Neural Network
+VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
+// NEW: VideoSetting for still JPEG capture
+// Using a common still image resolution like 640x480 or 1280x720, adjusted for your sensor
+// The '1' in the last parameter for VIDEO_JPEG often indicates a dedicated still capture mode.
+VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1); // Example: 640x480 JPEG at 1 FPS for capture
+
 NNObjectDetection ObjDet;
 RTSP rtsp;
 StreamIO videoStreamer(1, 1);
@@ -30,75 +39,38 @@ int status = WL_IDLE_STATUS;
 IPAddress ip;
 int rtsp_portnum;
 
-// This function attempts to get the image frame that was just processed by the NN.
-// This is a common pattern in SDKs where the NN module holds a copy of its input.
-// You MUST verify the actual function name and return types in your Realtek SDK.
-String EncodeBase64ImageFile() {
-  uint8_t *frameBuffer = nullptr;
-  size_t frameLen = 0;
-
-  // HYPOTHETICAL: Replace with actual SDK call if it exists.
-  // This is the most likely way to get the frame that the NN is working with.
-  // Example: ObjDet.getProcessedInputFrame(&frameBuffer, &frameLen);
-  // Example: frameBuffer = ObjDet.getLatestInputFrame(); frameLen = ObjDet.getInputFrameSize();
-  // Example: NNObjectDetection provides an internal buffer accessible like: ObjDet.input_buffer_addr, ObjDet.input_buffer_len
-  
-  // As a fallback for the example, we'll keep the Camera.getImage call, but it's noted as problematic.
-  // If no ObjDet method exists, you'd need to consider a separate video channel or deeper SDK integration.
-  Camera.getImage(CHANNELNN, (uint32_t*)&frameBuffer, (uint32_t*)&frameLen); // Cast for compatibility with uint32_t*
-
+// Function to encode a captured image to Base64
+String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
   Serial.println("Encoding image to Base64...");
   Serial.print("Image address: ");
-  Serial.println((uint32_t)frameBuffer, HEX); // Cast for printing
+  Serial.println(addr, HEX);
   Serial.print("Image length: ");
-  Serial.println(frameLen);
+  Serial.println(len);
 
-  if (frameBuffer == nullptr || frameLen == 0) {
-    Serial.println("Error: Could not retrieve image data from CHANNELNN or NN module. Returning empty string.");
-    return ""; // Return an empty string or handle error appropriately
-  }
-
-  // --- Base64 Encoding Logic ---
-  // Assuming base64_enc_len(input_length) calculates required output buffer size
-  // and base64_encode(output_buffer, input_buffer, input_length) encodes
-  // the entire buffer. If not, you need to implement a correct chunking loop.
-
-  // Determine the output buffer size needed for Base64
-  // The base64_enc_len(3) in your original code only gives size for 3 bytes.
-  // We need space for the entire encoded image.
-  size_t outputBufferLen = base64_enc_len(frameLen);
-  // Allocate buffer on heap to handle potentially large images
-  char *outputBuffer = new (std::nothrow) char[outputBufferLen + 1]; // +1 for null terminator
-
-  if (outputBuffer == nullptr) {
-    Serial.println("Error: Failed to allocate memory for Base64 output.");
+  if (addr == 0 || len == 0) {
+    Serial.println("Error: No valid image data provided for Base64 encoding.");
     return "";
   }
 
-  // Use the library's function to encode the whole buffer if available
-  // Replace this with the correct function signature from your Base64.h
-  // This is a placeholder for a typical full-buffer encode function.
-  // If your library only provides a 3-byte chunk encoder, the loop below is needed.
-  
-  // Option 1: If your Base64.h provides a full buffer encoding function:
-  // base64_encode(outputBuffer, (char*)frameBuffer, frameLen); // Example usage
-  // String imgFileInBase64 = String(outputBuffer);
+  uint8_t *fbBuf = (uint8_t *)addr;
+  size_t fbLen = len;
 
-  // Option 2: If your Base64.h only provides base64_encode(output, input, 3) (as implied by previous code):
-  String imgFileInBase64 = "";
-  char chunkOutput[5]; // 4 base64 chars + null terminator for a 3-byte input chunk
-  for (size_t i = 0; i < frameLen; i += 3) {
-      int bytesToEncode = std::min((size_t)3, frameLen - i); // Encode 3 bytes or less if at end
+  // The base64_encode function in Base64.h often encodes 3 bytes into 4 chars.
+  // The original loop (if (i%3==0) imageFile += String(output);) was problematic.
+  // This revised loop correctly processes chunks of 3 bytes.
+  String imgFileInBase64 = "data:image/jpeg;base64,"; // Prepend for web display (adjust mime type if not JPEG)
+  char chunkOutput[5]; // 4 base64 chars + null terminator
+  for (size_t i = 0; i < fbLen; i += 3) {
+      int bytesToEncode = std::min((size_t)3, fbLen - i);
       if (bytesToEncode <= 0) break; // Should not happen with correct loop conditions
 
-      // Ensure base64_encode can handle fewer than 3 bytes for the last chunk
-      base64_encode(chunkOutput, (char*)(frameBuffer + i), bytesToEncode);
+      base64_encode(chunkOutput, (char*)(fbBuf + i), bytesToEncode);
       imgFileInBase64 += String(chunkOutput);
   }
 
-  delete[] outputBuffer; // Free the allocated memory
   return imgFileInBase64;
 }
+
 
 void setup() {
   Serial.begin(115200);
@@ -118,8 +90,10 @@ void setup() {
   // Configure camera video channels with video format information
   // Adjust the bitrate based on your WiFi network quality
   config.setBitrate(2 * 1024 * 1024); // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
-  Camera.configVideoChannel(CHANNEL, config);
-  Camera.configVideoChannel(CHANNELNN, configNN); // Configure the RGB channel for NN
+  Camera.configVideoChannel(CHANNEL, config);     // H264 stream for RTSP
+  Camera.configVideoChannel(CHANNELNN, configNN); // RGB stream for NN
+  Camera.configVideoChannel(CHANNEL_STILL, configStill); // NEW: Dedicated channel for still capture
+
   Camera.printInfo();
   Camera.videoInit();
 
@@ -140,9 +114,7 @@ void setup() {
   if (videoStreamer.begin() != 0) {
     Serial.println("StreamIO link start failed");
   }
-
-  // Start data stream from video channel
-  Camera.channelBegin(CHANNEL);
+  Camera.channelBegin(CHANNEL); // Start H264 data stream
 
   // Configure StreamIO object to stream data from RGB video channel to object detection
   videoStreamerNN.registerInput(Camera.getStream(CHANNELNN));
@@ -152,35 +124,40 @@ void setup() {
   if (videoStreamerNN.begin() != 0) {
     Serial.println("StreamIO link start failed");
   }
-
-  // Start video channel for NN
-  Camera.channelBegin(CHANNELNN);
+  Camera.channelBegin(CHANNELNN); // Start RGB video channel for NN
 
   // Start OSD drawing on RTSP video channel
   OSD.configVideo(CHANNEL, config);
   OSD.begin();
+
+  // NEW: Start the dedicated still capture channel
+  // Depending on SDK, you might need to call channelBegin() and channelStop() around getImage()
+  // for a still capture channel if it's resource-intensive.
+  Camera.channelBegin(CHANNEL_STILL);
 }
 
 void loop() {
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
-  // These dimensions should ideally match the OSD channel config,
-  // which is CHANNEL (FHD), not NNWIDTH/NNHEIGHT (RGB for NN).
-  // If you intend to draw on the NN frame before encoding, you'd use NNWIDTH/NNHEIGHT.
-  // For OSD on RTSP (CHANNEL), use config.width()/height().
   uint16_t im_h = config.height(); // OSD is configured for CHANNEL 0 (FHD)
   uint16_t im_w = config.width();   // OSD is configured for CHANNEL 0 (FHD)
 
   OSD.createBitmap(CHANNEL); // Create bitmap for OSD on CHANNEL 0
 
   if (ObjDet.getResultCount() > 0) {
-    // Call the Base64 encoding function only when objects are detected
-    // This will try to get the image that the NN processed.
-    Serial.println(EncodeBase64ImageFile());
+    // If objects are detected, attempt to capture a still image from the dedicated channel
+    uint32_t still_img_addr = 0;
+    uint32_t still_img_len = 0;
 
-    // --- Uncomment and adapt this section to draw bounding boxes on the RTSP stream ---
+    // Capture the image from the dedicated still channel
+    Camera.getImage(CHANNEL_STILL, &still_img_addr, &still_img_len);
+    
+    // Pass the captured image data to the Base64 encoding function
+    Serial2.p rintln(EncodeBase64ImageFile(still_img_addr, still_img_len));
+
+    // --- (Optional) Uncomment and adapt this section to draw bounding boxes on the RTSP stream ---
     // Make sure the OSD coordinates are scaled correctly if results are from a different resolution NN
-    /*
+
     for (int i = 0; i < ObjDet.getResultCount(); i++) {
       int obj_type = results[i].type();
       // Assume itemList[obj_type].filter exists and is correct from ObjectClassList.h
@@ -204,7 +181,7 @@ void loop() {
         // OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
       // }
     }
-    */
+  
   }
   OSD.update(CHANNEL); // Update the OSD on CHANNEL 0
 
