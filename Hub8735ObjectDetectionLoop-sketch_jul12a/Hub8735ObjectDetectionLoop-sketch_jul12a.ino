@@ -8,27 +8,18 @@
 #include "ObjectClassList.h"
 #include "Base64.h"
 
-// Add these camera status definitions
-#define CAM_OK          0x00
-#define CAM_ERROR       0x01
-#define CAM_TIMEOUT     0x02
-
 
 #define CHANNEL 0
-#define CHANNELIMG 1
 #define CHANNELNN 3
 #define NNWIDTH 576
 #define NNHEIGHT 320
-#define CAMERA_INIT_RETRY 3
-#define CAMERA_INIT_DELAY 1000
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
 NNObjectDetection ObjDet;
 RTSP rtsp;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
-uint32_t img_addr = 0;
-uint32_t img_len = 0;
+
 // 設定
 char ssid[] = "hel";         // SSID
 char pass[] = "1234567890";  // 密碼
@@ -38,74 +29,32 @@ IPAddress ip;
 int rtsp_portnum;
 
 String EncodeBase64ImageFile() {
-    Camera.getImage(CHANNELIMG, &img_addr, &img_len);  // Remove return value check
-
-    if (img_addr == 0 || img_len == 0) {
-        return "";  // Return empty if invalid image data
-    }
-
-    uint8_t *fbBuf = (uint8_t *)img_addr;
-    size_t fbLen = img_len;
-    String imgFileInBase64 = "data:image/jpeg;base64,";
-
-    // Process in proper 3-byte chunks
-    const size_t chunkSize = 3;
-    char output[base64_enc_len(chunkSize) + 1];  // +1 for null terminator
-    
-    for (size_t i = 0; i < fbLen; i += chunkSize) {
-        size_t remaining = ((fbLen - i) < chunkSize) ? (fbLen - i) : chunkSize;
-        base64_encode(output, (char *)(fbBuf + i), remaining);
-        imgFileInBase64 += output;
-    }
-
-    return imgFileInBase64;
-}
-
-bool initCamera() {
-    int retry = 0;
-    while (retry < CAMERA_INIT_RETRY) {
-        if (Camera.videoInit() != CAM_OK) {
-            Serial.println("Camera init failed, retrying...");
-            delay(CAMERA_INIT_DELAY);
-            retry++;
-            continue;
-        }
-
-        delay(100); // Add small delay for stability
-
-        // Configure channels with error checking
-        if (Camera.configVideoChannel(CHANNEL, config) != CAM_OK) {
-            Serial.println("Main channel config failed");
-            retry++;
-            continue;
-        }
-
-        if (Camera.configVideoChannel(CHANNELNN, configNN) != CAM_OK) {
-            Serial.println("NN channel config failed");
-            retry++;
-            continue;
-        }
-
-        if (Camera.channelBegin(CHANNELIMG) != CAM_OK) {
-            Serial.println("Image channel begin failed");
-            retry++;
-            continue;
-        }
-
-        Camera.printInfo();
-        return true; // Success
-    }
-    
-    Serial.println("Camera initialization failed after all retries");
-    return false;
+  uint32_t addr = 0;
+  uint32_t len = 0;
+  Camera.getImage(CHANNEL, &addr, &len);
+  Serial.println("Encoding image to Base64...");
+  Serial.print("Image address: ");
+  Serial.println(addr, HEX);
+  Serial.print("Image length: ");
+  Serial.println(len);
+  uint8_t *fbBuf = (uint8_t *)addr;
+  size_t fbLen = len;
+  char *input = (char *)fbBuf;
+  char output[base64_enc_len(3)];
+  String imgFileInBase64 = "";
+  for (int i = 0; i < fbLen; i++) {
+    base64_encode(output, (input++), 3);
+    if (i % 3 == 0) imgFileInBase64 += String(output);
+  }
+  return imgFileInBase64;
 }
 
 void setup() {
-    Serial.begin(115200);
-    Serial2.begin(115200);
+  Serial.begin(115200);
+  Serial2.begin(115200);
 
-    // attempt to connect to Wifi network:
-    while (status != WL_CONNECTED) {
+  // attempt to connect to Wifi network:
+  while (status != WL_CONNECTED) {
     Serial.print("Attempting to connect to WPA SSID: ");
     Serial.println(ssid);
     status = WiFi.begin(ssid, pass);
@@ -115,14 +64,13 @@ void setup() {
   }
   ip = WiFi.localIP();
 
-  // Modified camera initialization
-  if (!initCamera()) {
-        Serial.println("Fatal: Camera init failed");
-        while(1) { 
-            delay(1000);
-            Serial.println("System halted - please reset");
-        }
-    }
+  // Configure camera video channels with video format information
+  // Adjust the bitrate based on your WiFi network quality
+  config.setBitrate(2 * 1024 * 1024);  // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
+  Camera.configVideoChannel(CHANNEL, config);
+  Camera.configVideoChannel(CHANNELNN, configNN);
+  Camera.printInfo();
+  Camera.videoInit();
 
   // Configure RTSP with corresponding video format information
   rtsp.configVideo(config);
@@ -164,14 +112,38 @@ void setup() {
 
 void loop() {
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
-  
+
+  uint16_t im_h = config.height();
+  uint16_t im_w = config.width();
+
+  OSD.createBitmap(CHANNEL);
+
   if (ObjDet.getResultCount() > 0) {
-      String base64Image = EncodeBase64ImageFile();
-      if (base64Image.length() > 22) { // More than just header
-          Serial.println(base64Image);
+    Serial.println(EncodeBase64ImageFile());
+    /**
+    for (int i = 0; i < ObjDet.getResultCount(); i++) {
+      int obj_type = results[i].type();
+      if (itemList[obj_type].filter) {  // check if item should be ignored
+
+        ObjectDetectionResult item = results[i];
+        // Result coordinates are floats ranging from 0.00 to 1.00
+        // Multiply with RTSP resolution to get coordinates in pixels
+        int xmin = (int)(item.xMin() * im_w);
+        int xmax = (int)(item.xMax() * im_w);
+        int ymin = (int)(item.yMin() * im_h);
+        int ymax = (int)(item.yMax() * im_h);
+
+        // Draw boundary box
+        OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
+
+        // Print identification text
+        char text_str[20];
+        //OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
       }
+    } */
   }
-  
   OSD.update(CHANNEL);
+
+  // delay to wait for new results
   delay(100);
 }
