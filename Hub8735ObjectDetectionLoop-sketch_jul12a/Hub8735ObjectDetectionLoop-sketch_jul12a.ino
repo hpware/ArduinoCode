@@ -14,6 +14,8 @@
 #define CHANNELNN 3
 #define NNWIDTH 576
 #define NNHEIGHT 320
+#define CAMERA_INIT_RETRY 3
+#define CAMERA_INIT_DELAY 1000
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
 NNObjectDetection ObjDet;
@@ -31,17 +33,29 @@ IPAddress ip;
 int rtsp_portnum;
 
 String EncodeBase64ImageFile() {
-  Camera.getImage(CHANNELIMG, &img_addr, &img_len);
-  uint8_t *fbBuf = (uint8_t *)img_addr;
-  size_t fbLen = img_len;
-  char *input = (char *)fbBuf;
-  char output[base64_enc_len(3)];
-  String imgFileInBase64 = "data:image/jpeg;base64,";
-  for (int i = 0; i < fbLen; i++) {
-    base64_encode(output, (input++), 3);
-    if (i % 3 == 0) imgFileInBase64 += String(output);
-  }
-  return imgFileInBase64;
+    if (Camera.getImage(CHANNELIMG, &img_addr, &img_len) != 0) {
+        return "";  // Return empty if getImage fails
+    }
+
+    if (img_addr == 0 || img_len == 0) {
+        return "";  // Return empty if invalid image data
+    }
+
+    uint8_t *fbBuf = (uint8_t *)img_addr;
+    size_t fbLen = img_len;
+    String imgFileInBase64 = "data:image/jpeg;base64,";
+
+    // Process in proper 3-byte chunks
+    const size_t chunkSize = 3;
+    char output[base64_enc_len(chunkSize) + 1];  // +1 for null terminator
+    
+    for (size_t i = 0; i < fbLen; i += chunkSize) {
+        size_t remaining = ((fbLen - i) < chunkSize) ? (fbLen - i) : chunkSize;
+        base64_encode(output, (char *)(fbBuf + i), remaining);
+        imgFileInBase64 += output;
+    }
+
+    return imgFileInBase64;
 }
 
 void setup() {
@@ -59,14 +73,33 @@ void setup() {
   }
   ip = WiFi.localIP();
 
-  // Configure camera video channels with video format information
-  // Adjust the bitrate based on your WiFi network quality
-  config.setBitrate(2 * 1024 * 1024);  // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
-  Camera.configVideoChannel(CHANNEL, config);
-  Camera.configVideoChannel(CHANNELNN, configNN);
-  Camera.channelBegin(CHANNELIMG);
-  Camera.printInfo();
-  Camera.videoInit();
+  // Configure camera with retry mechanism
+  int retry = 0;
+  bool camera_initialized = false;
+  
+  while (!camera_initialized && retry < CAMERA_INIT_RETRY) {
+      Camera.videoInit();
+      delay(CAMERA_INIT_DELAY);
+      
+      // Configure channels
+      if (Camera.configVideoChannel(CHANNEL, config) == 0 &&
+          Camera.configVideoChannel(CHANNELNN, configNN) == 0) {
+          
+          Camera.channelBegin(CHANNELIMG);
+          Camera.printInfo();
+          
+          camera_initialized = true;
+      } else {
+          retry++;
+          Serial.print("Camera init retry: ");
+          Serial.println(retry);
+      }
+  }
+
+  if (!camera_initialized) {
+      Serial.println("Camera initialization failed!");
+      while(1) { delay(1000); } // Halt execution
+  }
 
   // Configure RTSP with corresponding video format information
   rtsp.configVideo(config);
