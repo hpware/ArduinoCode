@@ -8,6 +8,11 @@
 #include "ObjectClassList.h"
 #include "Base64.h"
 
+// Add these camera status definitions
+#define CAM_OK          0x00
+#define CAM_ERROR       0x01
+#define CAM_TIMEOUT     0x02
+
 
 #define CHANNEL 0
 #define CHANNELIMG 1
@@ -56,12 +61,51 @@ String EncodeBase64ImageFile() {
     return imgFileInBase64;
 }
 
-void setup() {
-  Serial.begin(115200);
-  Serial2.begin(115200);
+bool initCamera() {
+    int retry = 0;
+    while (retry < CAMERA_INIT_RETRY) {
+        if (Camera.videoInit() != CAM_OK) {
+            Serial.println("Camera init failed, retrying...");
+            delay(CAMERA_INIT_DELAY);
+            retry++;
+            continue;
+        }
 
-  // attempt to connect to Wifi network:
-  while (status != WL_CONNECTED) {
+        delay(100); // Add small delay for stability
+
+        // Configure channels with error checking
+        if (Camera.configVideoChannel(CHANNEL, config) != CAM_OK) {
+            Serial.println("Main channel config failed");
+            retry++;
+            continue;
+        }
+
+        if (Camera.configVideoChannel(CHANNELNN, configNN) != CAM_OK) {
+            Serial.println("NN channel config failed");
+            retry++;
+            continue;
+        }
+
+        if (Camera.channelBegin(CHANNELIMG) != CAM_OK) {
+            Serial.println("Image channel begin failed");
+            retry++;
+            continue;
+        }
+
+        Camera.printInfo();
+        return true; // Success
+    }
+    
+    Serial.println("Camera initialization failed after all retries");
+    return false;
+}
+
+void setup() {
+    Serial.begin(115200);
+    Serial2.begin(115200);
+
+    // attempt to connect to Wifi network:
+    while (status != WL_CONNECTED) {
     Serial.print("Attempting to connect to WPA SSID: ");
     Serial.println(ssid);
     status = WiFi.begin(ssid, pass);
@@ -71,28 +115,14 @@ void setup() {
   }
   ip = WiFi.localIP();
 
-  // Configure camera with retry mechanism
-  int retry = 0;
-  bool camera_initialized = false;
-  
-  while (!camera_initialized && retry < CAMERA_INIT_RETRY) {
-      Camera.videoInit();
-      delay(CAMERA_INIT_DELAY);
-      
-      // Configure channels - remove return value checks
-      Camera.configVideoChannel(CHANNEL, config);
-      Camera.configVideoChannel(CHANNELNN, configNN);
-      Camera.channelBegin(CHANNELIMG);
-      Camera.printInfo();
-      
-      camera_initialized = true;  // Assume success if we get here
-      
-      retry++;
-      if (retry >= CAMERA_INIT_RETRY) {
-          Serial.println("Camera init retry limit reached");
-          while(1) { delay(1000); } // Halt execution
-      }
-  }
+  // Modified camera initialization
+  if (!initCamera()) {
+        Serial.println("Fatal: Camera init failed");
+        while(1) { 
+            delay(1000);
+            Serial.println("System halted - please reset");
+        }
+    }
 
   // Configure RTSP with corresponding video format information
   rtsp.configVideo(config);
