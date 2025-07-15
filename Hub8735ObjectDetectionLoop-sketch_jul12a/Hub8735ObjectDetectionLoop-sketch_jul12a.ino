@@ -33,9 +33,7 @@ IPAddress ip;
 int rtsp_portnum;
 
 String EncodeBase64ImageFile() {
-    if (Camera.getImage(CHANNELIMG, &img_addr, &img_len) != 0) {
-        return "";  // Return empty if getImage fails
-    }
+    Camera.getImage(CHANNELIMG, &img_addr, &img_len);  // Remove return value check
 
     if (img_addr == 0 || img_len == 0) {
         return "";  // Return empty if invalid image data
@@ -81,24 +79,19 @@ void setup() {
       Camera.videoInit();
       delay(CAMERA_INIT_DELAY);
       
-      // Configure channels
-      if (Camera.configVideoChannel(CHANNEL, config) == 0 &&
-          Camera.configVideoChannel(CHANNELNN, configNN) == 0) {
-          
-          Camera.channelBegin(CHANNELIMG);
-          Camera.printInfo();
-          
-          camera_initialized = true;
-      } else {
-          retry++;
-          Serial.print("Camera init retry: ");
-          Serial.println(retry);
+      // Configure channels - remove return value checks
+      Camera.configVideoChannel(CHANNEL, config);
+      Camera.configVideoChannel(CHANNELNN, configNN);
+      Camera.channelBegin(CHANNELIMG);
+      Camera.printInfo();
+      
+      camera_initialized = true;  // Assume success if we get here
+      
+      retry++;
+      if (retry >= CAMERA_INIT_RETRY) {
+          Serial.println("Camera init retry limit reached");
+          while(1) { delay(1000); } // Halt execution
       }
-  }
-
-  if (!camera_initialized) {
-      Serial.println("Camera initialization failed!");
-      while(1) { delay(1000); } // Halt execution
   }
 
   // Configure RTSP with corresponding video format information
@@ -141,38 +134,14 @@ void setup() {
 
 void loop() {
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
-
-  uint16_t im_h = config.height();
-  uint16_t im_w = config.width();
-
-  OSD.createBitmap(CHANNEL);
-
+  
   if (ObjDet.getResultCount() > 0) {
-    Serial.println(EncodeBase64ImageFile());
-    /**
-    for (int i = 0; i < ObjDet.getResultCount(); i++) {
-      int obj_type = results[i].type();
-      if (itemList[obj_type].filter) {  // check if item should be ignored
-
-        ObjectDetectionResult item = results[i];
-        // Result coordinates are floats ranging from 0.00 to 1.00
-        // Multiply with RTSP resolution to get coordinates in pixels
-        int xmin = (int)(item.xMin() * im_w);
-        int xmax = (int)(item.xMax() * im_w);
-        int ymin = (int)(item.yMin() * im_h);
-        int ymax = (int)(item.yMax() * im_h);
-
-        // Draw boundary box
-        OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
-
-        // Print identification text
-        char text_str[20];
-        //OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
+      String base64Image = EncodeBase64ImageFile();
+      if (base64Image.length() > 22) { // More than just header
+          Serial.println(base64Image);
       }
-    } */
   }
+  
   OSD.update(CHANNEL);
-
-  // delay to wait for new results
   delay(100);
 }
