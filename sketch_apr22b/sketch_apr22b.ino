@@ -65,6 +65,7 @@ DynamicJsonDocument cwa_data(512);
 const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
+bool pullingHub8735Data = false;
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
@@ -137,51 +138,53 @@ void MainTaskC(void *pvParameters) {
     // Read Hub 8735 serial data
     if (enableHub8735 == true) {
       static String accumulatedData = "";  // Static buffer for accumulating data
-      
+
       if (H87_Serial.available()) {
+        pullingHub8735Data = true;
         Serial.println("Reading HUB 8735 Data!");
         String data = H87_Serial.readStringUntil('\n');
-        
+
         // Debug print
         Serial.print("Received data length: ");
         Serial.println(data.length());
-        
+
         // Check if it's base64 image data
         if (data.startsWith("data:image/jpeg;base64,")) {
           Serial.println("Valid base64 image start received");
           accumulatedData = data;  // Start new accumulation
-          
+
         } else if (accumulatedData.length() > 0) {
           // Append to existing base64 data
           accumulatedData += data;
-          
+
           // Check if we have a complete base64 string (should be divisible by 4)
           if (data.endsWith("==") || data.length() % 4 == 0) {
             Serial.println("Complete base64 image received");
-            
+
             // Store only if we have actual content
             if (accumulatedData.length() > 23) {  // base64 header length
               // Update index first to avoid overwriting
               base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
               // Store the complete data
               base64Array[base64ArrayIndex] = accumulatedData;
-              
+
               Serial.print("Stored in slot: ");
               Serial.println(base64ArrayIndex);
               Serial.print("Total data length: ");
               Serial.println(accumulatedData.length());
-              
+
               // Clear the accumulation buffer
               accumulatedData = "";
             }
           }
-          
+
         } else {
           Serial.println("Received non-base64 data: ");
           Serial.println(data);
         }
       }
-      delay(10); // Small delay to allow serial buffer to fill
+      delay(10);  // Small delay to allow serial buffer to fill
+      pullingHub8735Data = false;
     }
     // Read GPS serial data
     if (enableGPS == true) {
@@ -330,11 +333,13 @@ void sssdata() {
   }
 
   client.stop();
-  // Clear the base64Array after sending
-  for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
-    base64Array[i] = "";
+  if (pullingHub8735Data) {
+    // Clear the base64Array after sending
+    for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
+      base64Array[i] = "";
+    }
+    base64ArrayIndex = 0;
   }
-  base64ArrayIndex = 0;
 }
 
 // 存取氣象局資料
