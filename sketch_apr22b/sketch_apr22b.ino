@@ -136,33 +136,52 @@ void MainTaskC(void *pvParameters) {
     }
     // Read Hub 8735 serial data
     if (enableHub8735 == true) {
+      static String accumulatedData = "";  // Static buffer for accumulating data
+      
       if (H87_Serial.available()) {
         Serial.println("Reading HUB 8735 Data!");
         String data = H87_Serial.readStringUntil('\n');
-
-        // Debug print the received data
+        
+        // Debug print
         Serial.print("Received data length: ");
         Serial.println(data.length());
-
+        
         // Check if it's base64 image data
         if (data.startsWith("data:image/jpeg;base64,")) {
-          Serial.println("Valid base64 image data received");
-
-          // Only store if we have actual content after the prefix
-          if (data.length() > 23) {  // "data:image/jpeg;base64," is 23 chars
-            base64Array[base64ArrayIndex] = data;
-            base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-
-            Serial.print("Stored in slot: ");
-            Serial.println(base64ArrayIndex);
-            Serial.print("Data length: ");
-            Serial.println(base64Array[base64ArrayIndex].length());
+          Serial.println("Valid base64 image start received");
+          accumulatedData = data;  // Start new accumulation
+          
+        } else if (accumulatedData.length() > 0) {
+          // Append to existing base64 data
+          accumulatedData += data;
+          
+          // Check if we have a complete base64 string (should be divisible by 4)
+          if (data.endsWith("==") || data.length() % 4 == 0) {
+            Serial.println("Complete base64 image received");
+            
+            // Store only if we have actual content
+            if (accumulatedData.length() > 23) {  // base64 header length
+              // Update index first to avoid overwriting
+              base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+              // Store the complete data
+              base64Array[base64ArrayIndex] = accumulatedData;
+              
+              Serial.print("Stored in slot: ");
+              Serial.println(base64ArrayIndex);
+              Serial.print("Total data length: ");
+              Serial.println(accumulatedData.length());
+              
+              // Clear the accumulation buffer
+              accumulatedData = "";
+            }
           }
+          
         } else {
           Serial.println("Received non-base64 data: ");
           Serial.println(data);
         }
       }
+      delay(10); // Small delay to allow serial buffer to fill
     }
     // Read GPS serial data
     if (enableGPS == true) {
