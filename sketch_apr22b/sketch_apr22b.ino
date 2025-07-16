@@ -36,12 +36,13 @@ const char *password = "1234567890";
 // 氣象局伺服器
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";  //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "livenet.sch2.top";                   // 主機
-const char *deviceId = "ec24af39-81a6-43fa-a90a-96a98da9cc6f";  // 裝置 ID
+const char *serverHost2 = "logger-v2.vercel.app";  // 主機
+// 66c21278-6031-4dd7-bb58-63bc613c02d3 <- 正式版 ID
+const char *deviceId = "6331116c-3632-4453-8a14-0377fa2726ed";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
-const bool enableGPS = true;
+const bool enableGPS = false;
 
 // 下方資料不要改!!!!
 // 資料
@@ -55,33 +56,24 @@ String defaultlat = "25.134393";
 String defaultlong = "121.469968";
 String gpsLat = "";
 String gpsLong = "";
-String gpsTime = "";
 // Set Global temp & humidity
 float temp = 0;
 float hum = 0;
 // Set global cwa data
 DynamicJsonDocument cwa_data(512);
-String cwa_testing_station = "";
-String cwa_wtype = "";
-float cwa_temp = 0;
-float cwa_hum = 0;
-float cwa_temp_high = 0;
-float cwa_temp_low = 0;
 // Do Stuff
 const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
-const char *serverUrl2 = "";  // 舊版
-
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
-
-TinyGPSPlus gps;
-//WiFiClient client;
+// INIT Hardware
 HardwareSerial GPS_Serial(1);  // GPS 連接
 HardwareSerial H87_Serial(2);  // 8735 連接
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
+TinyGPSPlus gps;
+// Setup
 void setup() {
   Serial.begin(115200);
   GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
@@ -138,12 +130,11 @@ void MainTaskC(void *pvParameters) {
     // Read Hub 8735 serial data
     if (enableHub8735 == true) {
       if (H87_Serial.available()) {
+        Serial.println("Reading HUB 8735 Data!");
         String data = H87_Serial.readStringUntil('\n');
-        if (data.length() > 0 && isPrintable(data[0])) {
           Serial.print("Hub 8735 data: ");
           h87data = data;
           Serial.println(h87data);
-        }
       }
     }
     // Read GPS serial data

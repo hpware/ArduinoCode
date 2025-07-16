@@ -8,11 +8,11 @@
 #include "ObjectClassList.h"
 #include "Base64.h"
 
-#include <algorithm> // Required for std::min
+#include <algorithm>  // Required for std::min
 
-#define CHANNEL 0    // H264 RTSP Stream
-#define CHANNELNN 3  // RGB Stream for Neural Network
-#define CHANNEL_STILL 1 // NEW: Dedicated channel for still JPEG capture
+#define CHANNEL 0        // H264 RTSP Stream
+#define CHANNELNN 3      // RGB Stream for Neural Network
+#define CHANNEL_STILL 1  // NEW: Dedicated channel for still JPEG capture
 
 #define NNWIDTH 576
 #define NNHEIGHT 320
@@ -24,7 +24,7 @@ VideoSetting configNN(NNWIDTH, NNHEIGHT, 10, VIDEO_RGB, 0);
 // NEW: VideoSetting for still JPEG capture
 // Using a common still image resolution like 640x480 or 1280x720, adjusted for your sensor
 // The '1' in the last parameter for VIDEO_JPEG often indicates a dedicated still capture mode.
-VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1); // Example: 640x480 JPEG at 1 FPS for capture
+VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1);  // Example: 640x480 JPEG at 1 FPS for capture
 
 NNObjectDetection ObjDet;
 RTSP rtsp;
@@ -58,14 +58,14 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
   // The base64_encode function in Base64.h often encodes 3 bytes into 4 chars.
   // The original loop (if (i%3==0) imageFile += String(output);) was problematic.
   // This revised loop correctly processes chunks of 3 bytes.
-  String imgFileInBase64 = "data:image/jpeg;base64,"; // Prepend for web display (adjust mime type if not JPEG)
-  char chunkOutput[5]; // 4 base64 chars + null terminator
+  String imgFileInBase64 = "data:image/jpeg;base64,";  // Prepend for web display (adjust mime type if not JPEG)
+  char chunkOutput[5];                                 // 4 base64 chars + null terminator
   for (size_t i = 0; i < fbLen; i += 3) {
-      int bytesToEncode = std::min((size_t)3, fbLen - i);
-      if (bytesToEncode <= 0) break; // Should not happen with correct loop conditions
+    int bytesToEncode = std::min((size_t)3, fbLen - i);
+    if (bytesToEncode <= 0) break;  // Should not happen with correct loop conditions
 
-      base64_encode(chunkOutput, (char*)(fbBuf + i), bytesToEncode);
-      imgFileInBase64 += String(chunkOutput);
+    base64_encode(chunkOutput, (char *)(fbBuf + i), bytesToEncode);
+    imgFileInBase64 += String(chunkOutput);
   }
 
   return imgFileInBase64;
@@ -89,10 +89,10 @@ void setup() {
 
   // Configure camera video channels with video format information
   // Adjust the bitrate based on your WiFi network quality
-  config.setBitrate(2 * 1024 * 1024); // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
-  Camera.configVideoChannel(CHANNEL, config);     // H264 stream for RTSP
-  Camera.configVideoChannel(CHANNELNN, configNN); // RGB stream for NN
-  Camera.configVideoChannel(CHANNEL_STILL, configStill); // NEW: Dedicated channel for still capture
+  config.setBitrate(2 * 1024 * 1024);                     // Recommend to use 2Mbps for RTSP streaming to prevent network congestion
+  Camera.configVideoChannel(CHANNEL, config);             // H264 stream for RTSP
+  Camera.configVideoChannel(CHANNELNN, configNN);         // RGB stream for NN
+  Camera.configVideoChannel(CHANNEL_STILL, configStill);  // NEW: Dedicated channel for still capture
 
   Camera.printInfo();
   Camera.videoInit();
@@ -114,7 +114,7 @@ void setup() {
   if (videoStreamer.begin() != 0) {
     Serial.println("StreamIO link start failed");
   }
-  Camera.channelBegin(CHANNEL); // Start H264 data stream
+  Camera.channelBegin(CHANNEL);  // Start H264 data stream
 
   // Configure StreamIO object to stream data from RGB video channel to object detection
   videoStreamerNN.registerInput(Camera.getStream(CHANNELNN));
@@ -124,7 +124,7 @@ void setup() {
   if (videoStreamerNN.begin() != 0) {
     Serial.println("StreamIO link start failed");
   }
-  Camera.channelBegin(CHANNELNN); // Start RGB video channel for NN
+  Camera.channelBegin(CHANNELNN);  // Start RGB video channel for NN
 
   // Start OSD drawing on RTSP video channel
   OSD.configVideo(CHANNEL, config);
@@ -136,7 +136,7 @@ void setup() {
   Camera.channelBegin(CHANNEL_STILL);
 }
 
-void loop() {
+  /*
   try {
     if (Serial2.available()) {
       String esp32Data = H87_Serial.readStringUntil('\n');
@@ -144,13 +144,15 @@ void loop() {
 
   } catch (...) {
     Serial.println("Exception caught in Serial2");
-  }
+  }*/
+void loop() {
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
-  uint16_t im_h = config.height(); // OSD is configured for CHANNEL 0 (FHD)
+
+  uint16_t im_h = config.height();  // OSD is configured for CHANNEL 0 (FHD)
   uint16_t im_w = config.width();   // OSD is configured for CHANNEL 0 (FHD)
 
-  OSD.createBitmap(CHANNEL); // Create bitmap for OSD on CHANNEL 0
+  OSD.createBitmap(CHANNEL);  // Create bitmap for OSD on CHANNEL 0
 
   if (ObjDet.getResultCount() > 0) {
     // If objects are detected, attempt to capture a still image from the dedicated channel
@@ -159,9 +161,11 @@ void loop() {
 
     // Capture the image from the dedicated still channel
     Camera.getImage(CHANNEL_STILL, &still_img_addr, &still_img_len);
-    
+
     // Pass the captured image data to the Base64 encoding function
-    Serial2.p rintln(EncodeBase64ImageFile(still_img_addr, still_img_len));
+    const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
+    Serial.println(encodingProcess);
+    Serial2.println(encodingProcess);
 
     // --- (Optional) Uncomment and adapt this section to draw bounding boxes on the RTSP stream ---
     // Make sure the OSD coordinates are scaled correctly if results are from a different resolution NN
@@ -172,26 +176,25 @@ void loop() {
       // Check if item should be ignored or if you want to draw all detections
       // if (itemList[obj_type].filter) {
 
-        ObjectDetectionResult item = results[i];
-        // Result coordinates are floats ranging from 0.00 to 1.00 relative to NNWIDTH/NNHEIGHT
-        // Scale them to the OSD resolution (im_w, im_h from config - FHD)
-        int xmin = (int)(item.xMin() * im_w);
-        int xmax = (int)(item.xMax() * im_w);
-        int ymin = (int)(item.yMin() * im_h);
-        int ymax = (int)(item.yMax() * im_h);
+      ObjectDetectionResult item = results[i];
+      // Result coordinates are floats ranging from 0.00 to 1.00 relative to NNWIDTH/NNHEIGHT
+      // Scale them to the OSD resolution (im_w, im_h from config - FHD)
+      int xmin = (int)(item.xMin() * im_w);
+      int xmax = (int)(item.xMax() * im_w);
+      int ymin = (int)(item.yMin() * im_h);
+      int ymax = (int)(item.yMax() * im_h);
 
-        // Draw boundary box on CHANNEL 0 (RTSP stream)
-        OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
+      // Draw boundary box on CHANNEL 0 (RTSP stream)
+      OSD.drawRect(CHANNEL, xmin, ymin, xmax, ymax, 3, OSD_COLOR_WHITE);
 
-        // Print identification text (ensure text_str is populated with actual class name)
-        // char text_str[20];
-        // snprintf(text_str, sizeof(text_str), "%s (%.2f)", itemList[obj_type].name, item.score());
-        // OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
+      // Print identification text (ensure text_str is populated with actual class name)
+      // char text_str[20];
+      // snprintf(text_str, sizeof(text_str), "%s (%.2f)", itemList[obj_type].name, item.score());
+      // OSD.drawText(CHANNEL, xmin, ymin - OSD.getTextHeight(CHANNEL), text_str, OSD_COLOR_CYAN);
       // }
     }
-  
   }
-  OSD.update(CHANNEL); // Update the OSD on CHANNEL 0
+  OSD.update(CHANNEL);  // Update the OSD on CHANNEL 0
 
   // delay to wait for new results
   delay(100);
