@@ -36,9 +36,9 @@ const char *password = "1234567890";
 // 氣象局伺服器
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";  //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "logger-v2.vercel.app";  // 主機
+const char *serverHost2 = "livenet.sch2.top";  // 主機
 // 66c21278-6031-4dd7-bb58-63bc613c02d3 <- 正式版 ID
-const char *deviceId = "6331116c-3632-4453-8a14-0377fa2726ed";  // 裝置 ID
+const char *deviceId = "b9186021-40da-40f4-83c0-af06396cccb7";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
@@ -73,6 +73,13 @@ HardwareSerial GPS_Serial(1);  // GPS 連接
 HardwareSerial H87_Serial(2);  // 8735 連接
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
+
+// Add these declarations at the top with other global variables
+String base64Data = "";
+const int MAX_BASE64_ARRAY = 5;  // Keep last 5 images
+String base64Array[MAX_BASE64_ARRAY];
+int base64ArrayIndex = 0;
+
 // Setup
 void setup() {
   Serial.begin(115200);
@@ -132,9 +139,29 @@ void MainTaskC(void *pvParameters) {
       if (H87_Serial.available()) {
         Serial.println("Reading HUB 8735 Data!");
         String data = H87_Serial.readStringUntil('\n');
-          Serial.print("Hub 8735 data: ");
-          h87data = data;
-          Serial.println(h87data);
+
+        // Debug print the received data
+        Serial.print("Received data length: ");
+        Serial.println(data.length());
+
+        // Check if it's base64 image data
+        if (data.startsWith("data:image/jpeg;base64,")) {
+          Serial.println("Valid base64 image data received");
+
+          // Only store if we have actual content after the prefix
+          if (data.length() > 23) {  // "data:image/jpeg;base64," is 23 chars
+            base64Array[base64ArrayIndex] = data;
+            base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+
+            Serial.print("Stored in slot: ");
+            Serial.println(base64ArrayIndex);
+            Serial.print("Data length: ");
+            Serial.println(base64Array[base64ArrayIndex].length());
+          }
+        } else {
+          Serial.println("Received non-base64 data: ");
+          Serial.println(data);
+        }
       }
     }
     // Read GPS serial data
@@ -227,7 +254,15 @@ void sssdata() {
   doc["local_time"] = "2024-03-20 15:30:00";
   doc["local_jistatus"] = isJiPowerOn;
   doc["local_detect"] = JsonArray();
-  doc["testing"] = h87data;
+
+  // Create array of base64 data
+  JsonArray testingArray = doc.createNestedArray("testing");
+  for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
+    if (base64Array[i].length() > 0) {
+      testingArray.add(base64Array[i]);
+    }
+  }
+
   String jsonString;
   serializeJson(doc, jsonString);
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
@@ -276,6 +311,11 @@ void sssdata() {
   }
 
   client.stop();
+  // Clear the base64Array after sending
+  for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
+    base64Array[i] = "";
+  }
+  base64ArrayIndex = 0;
 }
 
 // 存取氣象局資料
