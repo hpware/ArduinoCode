@@ -36,9 +36,8 @@ const char *password = "1234567890";
 // 氣象局伺服器
 const char *serverUrl1 = "https://hpg7.sch2.top/weather/v2/";  //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "livenet.sch2.top";  // 主機
-// 66c21278-6031-4dd7-bb58-63bc613c02d3 <- 正式版 ID
-const char *deviceId = "b9186021-40da-40f4-83c0-af06396cccb7";  // 裝置 ID
+const char *serverHost2 = "3m4ft6.a.srv.yhw.tw";  // 主機
+const char *deviceId = "8595228a-92a6-47d2-b372-f5b4e7d74547";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
