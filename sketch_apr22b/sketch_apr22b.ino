@@ -41,7 +41,7 @@ const char *deviceId = "8595228a-92a6-47d2-b372-f5b4e7d74547";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
-const bool enableGPS = false;
+const bool enableGPS = true;
 
 // 下方資料不要改!!!!
 // 資料
@@ -148,34 +148,24 @@ void MainTaskC(void *pvParameters) {
         Serial.println(data.length());
 
         // Check if it's base64 image data
-        if (data.startsWith("data:image/jpeg;base64,")) {
+        if (data.startsWith("<!START BLOCK!>") && data.endsWith("<!END BLOCK!>")) {
           Serial.println("Valid base64 image start received");
           accumulatedData = data;  // Start new accumulation
 
         } else if (accumulatedData.length() > 0) {
           // Append to existing base64 data
           accumulatedData += data;
+          base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+          // Store the complete data
+          base64Array[base64ArrayIndex] = accumulatedData;
 
-          // Check if we have a complete base64 string (should be divisible by 4)
-          if (data.endsWith("==") || data.length() % 4 == 0) {
-            Serial.println("Complete base64 image received");
+          Serial.print("Stored in slot: ");
+          Serial.println(base64ArrayIndex);
+          Serial.print("Total data length: ");
+          Serial.println(accumulatedData.length());
 
-            // Store only if we have actual content
-            if (accumulatedData.length() > 23) {  // base64 header length
-              // Update index first to avoid overwriting
-              base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-              // Store the complete data
-              base64Array[base64ArrayIndex] = accumulatedData;
-
-              Serial.print("Stored in slot: ");
-              Serial.println(base64ArrayIndex);
-              Serial.print("Total data length: ");
-              Serial.println(accumulatedData.length());
-
-              // Clear the accumulation buffer
-              accumulatedData = "";
-            }
-          }
+          // Clear the accumulation buffer
+          accumulatedData = "";
 
         } else {
           Serial.println("Received non-base64 data: ");

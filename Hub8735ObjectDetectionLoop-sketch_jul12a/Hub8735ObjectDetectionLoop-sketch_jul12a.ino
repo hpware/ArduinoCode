@@ -7,6 +7,8 @@
 #include "VideoStreamOverlay.h"
 #include "ObjectClassList.h"
 #include "Base64.h"
+#include <CameraLED.h>
+
 
 #include <algorithm>  // Required for std::min
 
@@ -16,6 +18,8 @@
 
 #define NNWIDTH 576
 #define NNHEIGHT 320
+#define LED_PWM 13
+
 
 // VideoSetting for H264 RTSP stream
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
@@ -28,6 +32,7 @@ VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1);  // Example: 640x480 JPEG
 
 NNObjectDetection ObjDet;
 RTSP rtsp;
+CameraLED flashLight;
 StreamIO videoStreamer(1, 1);
 StreamIO videoStreamerNN(1, 1);
 
@@ -108,6 +113,9 @@ void setup() {
   ObjDet.modelSelect(OBJECT_DETECTION, DEFAULT_YOLOV4TINY, NA_MODEL, NA_MODEL);
   ObjDet.begin();
 
+  flashLight.attach(LED_PWM, 1, 2000);
+  flashLight.writeMicroseconds(0);
+
   // Configure StreamIO object to stream data from video channel to RTSP
   videoStreamer.registerInput(Camera.getStream(CHANNEL));
   videoStreamer.registerOutput(rtsp);
@@ -146,6 +154,7 @@ void setup() {
     Serial.println("Exception caught in Serial2");
   }*/
 void loop() {
+  flashLight.writeMicroseconds(200 * 1);
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
 
 
@@ -164,8 +173,13 @@ void loop() {
 
     // Pass the captured image data to the Base64 encoding function
     const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
+    Serial.println("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
     Serial.println(encodingProcess);
-    Serial2.println(encodingProcess);
+    Serial.println("<!END BLOCK!>");
+  
+    Serial2.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
+    Serial2.print(encodingProcess);
+    Serial2.println("<!END BLOCK!>");
 
     // --- (Optional) Uncomment and adapt this section to draw bounding boxes on the RTSP stream ---
     // Make sure the OSD coordinates are scaled correctly if results are from a different resolution NN

@@ -1,13 +1,17 @@
+/*  This example uses the camera to capture a JPEG image repeatedly,
+ *  and sends the images to a browser continuously using HTTP, creating the effect of a video.
+ *  Use Firefox to connect to the board's IP address after it has connected to WiFi,
+ *  or use the APP V7RC.
+
+ Example guide:
+ https://www.amebaiot.com/en/amebapro2-arduino-video-jpeg-http/
+*/
 
 #include <WiFi.h>
 #include "VideoStream.h"
 #include <CameraLED.h>
-//#include "Base64.h"
-//#include <algorithm>
-
 
 #define CHANNEL 0
-#define CHANNEL_STILL 1
 #define LED_PWM 13
 
 // Use a pre-defined resolution, or choose to configure your own resolution
@@ -15,59 +19,28 @@
 // VideoSetting config(VIDEO_HD, CAM_FPS, VIDEO_JPEG, 1);
 // VideoSetting config(VIDEO_VGA, CAM_FPS, VIDEO_JPEG, 1);
 VideoSetting config(1024, 576, CAM_FPS, VIDEO_JPEG, 1);
-VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1);
+VideoSetting config2(VIDEO_HD, CAM_FPS, VIDEO_JPEG, 0);
 CameraLED flashLight;
 
 
-char ssid[] = "thisishell";       // your network SSID (name)
-char pass[] = "keQV6a&6E*xx20!";  // your network password
+char ssid[] = "hel";         // your network SSID (name)
+char pass[] = "1234567890";  // your network password
 int status = WL_IDLE_STATUS;
 WiFiServer server(80);
 
 uint32_t img_addr = 0;
 uint32_t img_len = 0;
 
+TaskHandle_t MainTask;
+TaskHandle_t ImageTask;
+
 #define PART_BOUNDARY "123456789000000000000987654321"
 char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 char* IMG_HEADER = "Content-Type: image/jpeg\r\nContent-Length: %lu\r\n\r\n";
 
-
-String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
-  /**  Serial.println("Encoding image to Base64...");
-  Serial.print("Image address: ");
-  Serial.println(addr, HEX);
-  Serial.print("Image length: ");
-  Serial.println(len);
-
-  if (addr == 0 || len == 0) {
-    Serial.println("Error: No valid image data provided for Base64 encoding.");
-    return "";
-  }
-
-  uint8_t* fbBuf = (uint8_t*)addr;
-  size_t fbLen = len;
-
-  // The base64_encode function in Base64.h often encodes 3 bytes into 4 chars.
-  // The original loop (if (i%3==0) imageFile += String(output);) was problematic.
-  // This revised loop correctly processes chunks of 3 bytes.
-  String imgFileInBase64 = "data:image/jpeg;base64,";  // Prepend for web display (adjust mime type if not JPEG)
-  char chunkOutput[5];                                 // 4 base64 chars + null terminator
-  for (size_t i = 0; i < fbLen; i += 3) {
-    int bytesToEncode = std::min((size_t)3, fbLen - i);
-    if (bytesToEncode <= 0) break;  // Should not happen with correct loop conditions
-
-    base64_encode(chunkOutput, (char*)(fbBuf + i), bytesToEncode);
-    imgFileInBase64 += String(chunkOutput);
-  }
-*/
-  String imgFileInBase64 = "HELLO WORLD";
-  return imgFileInBase64;
-}
-
 void sendHeader(WiFiClient& client) {
   client.print("HTTP/1.1 200 OK\r\nContent-type: multipart/x-mixed-replace; boundary=");
   client.println(PART_BOUNDARY);
-  client.print("Access-Control-Allow-Origin: *\r\n");
   client.print("Transfer-Encoding: chunked\r\n");
   client.print("\r\n");
 }
@@ -94,9 +67,30 @@ void setup() {
   Camera.channelBegin(CHANNEL);
 
   server.begin();
+  xTaskCreatePinnedToCore(
+    MainTaskFunction,   // Task function that it should be using (also don't use the same name as the task handle name, it won't work at all)
+    "MainTask",  // Task name
+    10000,       // Stack size
+    NULL,        // param of the task
+    1,           // priority of the task
+    &MainTask,   // task hnalde to keep track
+    0            // use core 0
+  );  
+  delay(500);
+  xTaskCreatePinnedToCore(
+    ImageTaskFunction,
+    "ImageTask",
+    10000,
+    NULL,
+    1,
+    &ImageTask,
+    1);
+  delay(500);
 }
 
-void loop() {
+void loop() {}
+
+void ImageTaskFunction(void *pvParameters) {
   WiFiClient client = server.available();
   if (client) {
     Serial.println("new client connected");
@@ -134,26 +128,14 @@ void loop() {
   }
 }
 
-void base64ImageRequest() {
-  uint32_t still_img_addr = 0;
-  uint32_t still_img_len = 0;
-
-  // Capture the image from the dedicated still channel
-  Camera.getImage(CHANNEL_STILL, &still_img_addr, &still_img_len);
-
-  // Pass the captured image data to the Base64 encoding function
-  const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
-  // Debugging
-  Serial.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
-  Serial.println(encodingProcess);
-  Serial.println("<!END BLOCK!>");
-
-  Serial2.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
-  Serial2.println(encodingProcess);
-  Serial2.println("<!END BLOCK!>");
+void MainTaskFunction(void *pvParameters) {
+  Serial.println("Hi");
+  flashLight.writeMicroseconds(200 * 1);
+  Serial.println("Hi");
+  flashLight.writeMicroseconds(200 * 8);
 }
 
-void SetLedBrightness(int nummt) {
-  // 1 -> 8
-  flashLight.writeMicroseconds(200 * nummt);
+void sendBase64Request() {
+  Serial2.println("<!START BLOCK!>");
+  Serial2.println("<!END BLOCK!>");
 }
