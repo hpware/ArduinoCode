@@ -8,3 +8,4 @@ sketch_apr15b
 *.zip
 untracked
 env.h
+build
