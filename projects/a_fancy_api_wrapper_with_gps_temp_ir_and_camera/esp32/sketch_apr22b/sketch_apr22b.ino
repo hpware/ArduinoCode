@@ -1,9 +1,9 @@
 /**
- * Sources: 
- * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/ 
+ * Sources:
+ * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/
  * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
  * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
- * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef4cfca
+ * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef234dfca (Updated chat URL)
  * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
 */
 
@@ -48,7 +48,7 @@ const bool enableGPS = true;
 
 // 下方資料不要改!!!!
 // 資料
-String data = "";
+// String data = ""; // This 'data' variable is now locally scoped in MainTaskC
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
@@ -67,9 +67,17 @@ DynamicJsonDocument cwa_data(512);
 const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
-bool pullingHub8735Data = false;
-bool base64DataSendDone = true;
+bool pullingHub8735Data = false;  // Kept, but its usage will be refined for cross-task communication
+// Removed bool base64DataSendDone = true; as it's replaced by base64DataInProgress
+
+// === Base64 handling variables - moved to global scope ===
+String accumulatedData = "";  // Moved from static local to global
 bool base64DataInProgress = false;
+const int MAX_BASE64_ARRAY = 5;  // Keep last 5 images
+String base64Array[MAX_BASE64_ARRAY];
+int base64ArrayIndex = 0;
+// === End Base64 handling variables ===
+
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
@@ -79,11 +87,6 @@ HardwareSerial H87_Serial(2);  // 8735 連接
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
 
-// Add these declarations at the top with other global variables
-String base64Data = "";
-const int MAX_BASE64_ARRAY = 5;  // Keep last 5 images
-String base64Array[MAX_BASE64_ARRAY];
-int base64ArrayIndex = 0;
 
 // Setup
 void setup() {
@@ -139,38 +142,53 @@ void MainTaskC(void *pvParameters) {
       temp = dht_sensor.readTemperature();
       hum = dht_sensor.readHumidity();
     }
+
     // Read Hub 8735 serial data
     if (enableHub8735 == true) {
-      static String accumulatedData = "";  // Static buffer for accumulating data
-
       if (H87_Serial.available()) {
-        pullingHub8735Data = true;
+        pullingHub8735Data = true;  // Flag for this task iteration
         Serial.println("Reading HUB 8735 Data!");
-        String data = H87_Serial.readStringUntil('\n');
 
-        // Debug print
+        // Read until a newline. This assumes ALL messages (base64 chunks, JSON) are newline terminated.
+        String data = H87_Serial.readStringUntil('\n');
+        data.trim();  // Important: Remove any leading/trailing whitespace, especially for JSON
+
+        // Debug prints
         Serial.print("Received data length: ");
         Serial.println(data.length());
+        Serial.print("Received data: '");  // Use quotes to see if there are extra spaces/newlines
+        Serial.print(data);
+        Serial.println("'");
 
-        if (data.startsWith("<!START BLOCK!>") && !base64DataInProgress) {
-          accumulatedData = data;       // Start accumulating this first chunk
-          base64DataInProgress = true;  // Set the flag to true
-          Serial.println("Started accumulating base64 data.");
-        } else if (base64DataInProgress) {
-          // We are currently in the process of accumulating a base64 block, so append the current data chunk.
-          accumulatedData += data;
+        // --- Start of refined base64/JSON handling logic ---
 
-          // Check if the END BLOCK marker is now present in the accumulated data.
-          if (accumulatedData.endsWith("</!END BLOCK!>")) {
+        // 1. Check for the start of a base64 block
+        if (data.startsWith("<!START BLOCK!>")) {
+          if (!base64DataInProgress) {
+            accumulatedData = data;       // Start accumulating this first chunk
+            base64DataInProgress = true;  // Set the flag to true
+            Serial.println("Started accumulating base64 data.");
+          } else {
+            // This is an unexpected START BLOCK while one is already in progress.
+            // It could mean a previous image was incomplete or an error.
+            // You might want to discard the old one or handle this as an error.
+            Serial.println("WARNING: Received START BLOCK while already accumulating. Discarding old data.");
+            accumulatedData = data;  // Start fresh with the new block
+          }
+        }
+        // 2. Check for the end of a base64 block (must be in progress for this to be valid)
+        else if (data.endsWith("</!END BLOCK!>")) {
+          if (base64DataInProgress) {
+            accumulatedData += data;  // Append the last chunk which contains the end marker
+
+            // Now, process the complete base64 block
             Serial.println("Complete base64 image received!");
-
-            // Extract the pure base64 string by removing the start and end markers.
             int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
             int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
 
-            // Validate that both markers were found and in the correct order.
             if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
+              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);  // 16 is length of "<!START BLOCK!>"
+
               base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
               base64Array[base64ArrayIndex] = completeBase64Image;
 
@@ -183,30 +201,67 @@ void MainTaskC(void *pvParameters) {
 
             } else {
               Serial.println("Error: Start or end block markers not found correctly in the accumulated data.");
+              // Optionally, reset state on error to prevent endless accumulation of bad data
+              accumulatedData = "";
+              base64DataInProgress = false;
             }
 
+            // Reset state after successful processing (or detected error in markers)
             accumulatedData = "";
             base64DataInProgress = false;
           } else {
-            Serial.print("Continuing accumulation. Current length: ");
-            Serial.println(accumulatedData.length());
+            // Received END BLOCK without a preceding START BLOCK. This is unexpected.
+            Serial.println("WARNING: Received END BLOCK without START BLOCK. Discarding.");
+            // Also discard any current accumulated data if there was any (though base64DataInProgress should be false)
+            accumulatedData = "";
           }
-        } else {
-          Serial.println("Received non-base64 (or unexpected) data: ");
+        }
+        // 3. If a base64 block is in progress, accumulate intermediate data chunks
+        else if (base64DataInProgress) {
+          accumulatedData += data;
+          Serial.print("Continuing base64 accumulation. Current length: ");
+          Serial.println(accumulatedData.length());
+        }
+        // 4. If none of the above, and it looks like JSON
+        else if (data.startsWith("{") && data.endsWith("}")) {  // More generic JSON check (startsWith "{")
+          Serial.println("Received JSON weather data:");
+          Serial.println(data);
+          // Assuming this JSON is for CWA data as per your logs:
+          DynamicJsonDocument incomingJson(512);  // Use a temporary doc for incoming JSON
+          DeserializationError error = deserializeJson(incomingJson, data);
+
+          if (!error) {
+            // Safely update global cwa_data
+            cwa_data.clear();            // Clear previous CWA data
+            cwa_data.set(incomingJson);  // Copy new CWA data
+            Serial.println("CWA data updated.");
+          } else {
+            Serial.print("JSON parsing failed: ");
+            Serial.println(error.f_str());
+          }
+        }
+        // 5. Anything else (unhandled/unknown data)
+        else {
+          Serial.println("Received unhandled data (neither base64 nor known JSON): ");
           Serial.println(data);
         }
+        // --- End of refined base64/JSON handling logic ---
       }
-      delay(10);  // Small delay to allow serial buffer to fill
-      pullingHub8735Data = false;
+      delay(10);                   // Small delay to allow serial buffer to fill
+      pullingHub8735Data = false;  // Reset the flag for this task iteration
     }
     // Read GPS serial data
     if (enableGPS == true) {
       if (GPS_Serial.available()) {
-        if (GPS_Serial.read() > 0) {
+        // Read bytes directly into TinyGPS++
+        // Note: You might need to read all available bytes in a loop for GPS to parse effectively
+        while (GPS_Serial.available()) {
           if (gps.encode(GPS_Serial.read())) {
             if (gps.location.isValid()) {
-              gpsLat = String(gps.location.lat());
-              gpsLong = String(gps.location.lng());
+              gpsLat = String(gps.location.lat(), 6);  // Add precision for GPS
+              gpsLong = String(gps.location.lng(), 6);
+              // Serial.print("GPS Lat: "); Serial.println(gpsLat);
+              // Serial.print("GPS Lng: "); Serial.println(gpsLong);
             }
           }
         }
@@ -236,69 +291,96 @@ void SendTaskC(void *pvParameters) {
 
 void sssdata() {
   // 設定預設值
+  // Use .c_str() for String when accessing DynamicJsonDocument for safety if needed,
+  // but generally String comparison with const char* works ok.
   String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
   String cwaLocation = cwa_data.containsKey("location") ? cwa_data["location"].as<String>() : "臺北市士林區";
   float cwaTemp = 23.5;
   int cwaHum = 89;
   int cwaDailyHigh = 28;
   int cwaDailyLow = 22;
-  int localTemp = temp;
-  int localHum = hum;
+  // Use float for local temp/hum to preserve precision before casting to int for JSON
+  float localTempFloat = temp;
+  float localHumFloat = hum;
   String localGpsLat = gpsLat.length() > 0 ? gpsLat : defaultlat;
   String localGpsLong = gpsLong.length() > 0 ? gpsLong : defaultlong;
-  String localTime = "2025-07-12 10:15:00";
+  String localTime = "2025-07-12 10:15:00";  // Consider using a real-time clock for accuracy
   bool localJistatus = isJiPowerOn;
   bool localLedStatus = isLedPowerOn;
 
-  if (cwa_data.containsKey("location")) {
-    if (!cwa_data["temperature"].isNull() && cwa_data["temperature"] != -99) {
+  if (cwa_data.containsKey("location")) {  // Check for a valid weather data presence
+    if (cwa_data["temperature"].is<float>() && cwa_data["temperature"] != -99) {
       cwaTemp = cwa_data["temperature"].as<float>();
     }
-    if (!cwa_data["humidity"].isNull() && cwa_data["humidity"] != -99) {
+    if (cwa_data["humidity"].is<int>() && cwa_data["humidity"] != -99) {  // Ensure it's an int and not -99
       cwaHum = cwa_data["humidity"].as<int>();
     }
-    if (!cwa_data["dailyHigh"].isNull() && cwa_data["dailyHigh"] != -99) {
+    if (cwa_data["dailyHigh"].is<int>() && cwa_data["dailyHigh"] != -99) {
       cwaDailyHigh = cwa_data["dailyHigh"].as<int>();
     }
-    if (!cwa_data["daliyLow"].isNull() && cwa_data["daliyLow"] != -99) {
-      cwaDailyLow = cwa_data["daliyLow"].as<int>();
+    if (cwa_data["dailyLow"].is<int>() && cwa_data["dailyLow"] != -99) {  // Corrected key name from "daliyLow"
+      cwaDailyLow = cwa_data["dailyLow"].as<int>();
     }
   }
   // 開始傳送
   WiFiClientSecure client;
-  client.setInsecure();                   // 可以接收尚未被接受的SSL憑證
-  unsigned long connectStart = millis();  // 時間
+  client.setInsecure();                   // Can receive unsigned SSL certificates
+  unsigned long connectStart = millis();  // Time
   while (!client.connect(serverHost2, 443)) {
-    if (millis() - connectStart > 5000) {  // 5秒
-      Serial.println("Connection failed");
+    if (millis() - connectStart > 5000) {  // 5 seconds timeout
       return;
     }
     delay(100);
   }
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1024> doc;  // Reconsider size: 1024 is tight for even one base64 image
+                                 // You might need larger, e.g., 8192 or 16384 for several images.
+                                 // Or consider sending base64 images separately.
   doc["cwa_type"] = cwaType;
   doc["cwa_location"] = cwaLocation;
   doc["cwa_temp"] = cwaTemp;
   doc["cwa_hum"] = cwaHum;
-  doc["cwa_daliyHigh"] = cwaDailyHigh;
-  doc["cwa_daliyLow"] = cwaDailyLow;
-  doc["local_temp"] = (int)temp;
-  doc["local_hum"] = (int)hum;
-  doc["local_gps_lat"] = gpsLat.length() > 0 ? gpsLat : defaultlat;
-  doc["local_gps_long"] = gpsLong.length() > 0 ? gpsLong : defaultlong;
-  doc["local_time"] = "2024-03-20 15:30:00";
+  doc["cwa_daliyHigh"] = cwaDailyHigh;      // Key matches your server's expectation ("daliyLow")
+  doc["cwa_daliyLow"] = cwaDailyLow;        // Key matches your server's expectation ("daliyLow")
+  doc["local_temp"] = (int)localTempFloat;  // Cast to int here
+  doc["local_hum"] = (int)localHumFloat;    // Cast to int here
+  doc["local_gps_lat"] = localGpsLat;
+  doc["local_gps_long"] = localGpsLong;
+  doc["local_time"] = "2024-03-20 15:30:00";  // Update with real time if possible
   doc["local_jistatus"] = isJiPowerOn;
-  doc["local_detect"] = JsonArray();
+  // doc["local_detect"] = JsonArray(); // If this array is always empty, remove it to save space
 
   // Create array of base64 data
-  JsonArray testingArray = doc.createNestedArray("testing");
+  // Only add if there are images to send
+  bool hasImagesToSend = false;
   for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
     if (base64Array[i].length() > 0) {
-      testingArray.add(base64Array[i]);
+      hasImagesToSend = true;
+      break;
     }
   }
 
+  if (hasImagesToSend) {
+    JsonArray testingArray = doc.createNestedArray("testing");
+    for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
+      if (base64Array[i].length() > 0) {
+        testingArray.add(base64Array[i]);
+        // IMPORTANT: If you want to send only once, clear the slot after adding it to JSON
+        // base64Array[i] = ""; // You can clear it here or after sending HTTP request
+      }
+    }
+  }
+
+
   String jsonString;
+  // Check serialization size before sending
+  size_t json_size = measureJson(doc);
+  if (json_size > 1024) {  // 1024 is the size of StaticJsonDocument
+    Serial.print("WARNING: JSON document too large for StaticJsonDocument! Size: ");
+    Serial.println(json_size);
+    // You might need to use DynamicJsonDocument here, or handle large payloads differently.
+    // For now, it will likely be truncated.
+  }
+
   serializeJson(doc, jsonString);
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
   client.println("Host: " + String(serverHost2));
@@ -308,6 +390,9 @@ void sssdata() {
   client.println(jsonString.length());
   client.println();
   client.print(jsonString);
+
+  client.flush();  // Ensure all buffered data is sent over the network
+
   unsigned long timeout = millis();
   while (!client.available()) {
     if (millis() - timeout > 5000) {
@@ -341,17 +426,22 @@ void sssdata() {
         isLedPowerOn = respDoc["ledstatus"].as<bool>();
         digitalWrite(LED_PIN, isLedPowerOn);
       }
-      //Serial.println("✅");
+    } else {
+      Serial.print("Error parsing server response JSON: ");
+      Serial.println(error.f_str());
     }
+  } else {
+    Serial.println("Invalid HTTP response format (no body detected).");
+    Serial.println(response);  // Print full response for debugging
   }
 
   client.stop();
-  if (pullingHub8735Data) {
-    // Clear the base64Array after sending
+  if (hasImagesToSend) {  // Only clear if there were images to send in this packet
     for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
       base64Array[i] = "";
     }
-    base64ArrayIndex = 0;
+    base64ArrayIndex = 0;  // Reset index to start from beginning
+    Serial.println("Base64 array cleared after sending.");
   }
 }
 
@@ -366,6 +456,16 @@ void getWeatherData() {
   if (httpResponseCode > 0) {
     String payload = http.getString();
     Serial.println(payload);
+    DynamicJsonDocument fetchedCwaData(512);
+    DeserializationError error = deserializeJson(fetchedCwaData, payload);
+    if (!error) {
+      cwa_data.clear();
+      cwa_data.set(fetchedCwaData);
+   } else {
+      Serial.print("Error parsing CWA HTTP GET JSON: ");
+      Serial.println(error.f_str());
+    }
+
   } else {
     Serial.print("Error code: ");
     Serial.println(httpResponseCode);
