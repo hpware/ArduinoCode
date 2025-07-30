@@ -143,16 +143,6 @@ void setup() {
   // for a still capture channel if it's resource-intensive.
   Camera.channelBegin(CHANNEL_STILL);
 }
-
-  /*
-  try {
-    if (Serial2.available()) {
-      String esp32Data = H87_Serial.readStringUntil('\n');
-    }
-
-  } catch (...) {
-    Serial.println("Exception caught in Serial2");
-  }*/
 void loop() {
   flashLight.writeMicroseconds(200 * 1);
   std::vector<ObjectDetectionResult> results = ObjDet.getResult();
