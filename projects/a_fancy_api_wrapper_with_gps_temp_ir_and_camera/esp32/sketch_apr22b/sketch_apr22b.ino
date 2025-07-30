@@ -43,7 +43,7 @@ const char *deviceId = "8595228a-92a6-47d2-b372-f5b4e7d74547";  // 裝置 ID
 
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
-const bool enableHub8735 = false;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
+const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
 const bool enableGPS = true;
 
 // 下方資料不要改!!!!
@@ -68,6 +68,8 @@ const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
 bool pullingHub8735Data = false;
+bool base64DataSendDone = true;
+bool base64DataInProgress = false;
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
@@ -150,28 +152,47 @@ void MainTaskC(void *pvParameters) {
         Serial.print("Received data length: ");
         Serial.println(data.length());
 
-        // Check if it's base64 image data
-        if (data.startsWith("<!START BLOCK!>") && data.endsWith("<!END BLOCK!>")) {
-          Serial.println("Valid base64 image start received");
-          accumulatedData = data;  // Start new accumulation
-
-        } else if (accumulatedData.length() > 0) {
-          // Append to existing base64 data
+        if (data.startsWith("<!START BLOCK!>") && !base64DataInProgress) {
+          accumulatedData = data;       // Start accumulating this first chunk
+          base64DataInProgress = true;  // Set the flag to true
+          Serial.println("Started accumulating base64 data.");
+        } else if (base64DataInProgress) {
+          // We are currently in the process of accumulating a base64 block, so append the current data chunk.
           accumulatedData += data;
-          base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-          // Store the complete data
-          base64Array[base64ArrayIndex] = accumulatedData;
 
-          Serial.print("Stored in slot: ");
-          Serial.println(base64ArrayIndex);
-          Serial.print("Total data length: ");
-          Serial.println(accumulatedData.length());
+          // Check if the END BLOCK marker is now present in the accumulated data.
+          if (accumulatedData.endsWith("</!END BLOCK!>")) {
+            Serial.println("Complete base64 image received!");
 
-          // Clear the accumulation buffer
-          accumulatedData = "";
+            // Extract the pure base64 string by removing the start and end markers.
+            int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
+            int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
 
+            // Validate that both markers were found and in the correct order.
+            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
+              base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+              base64Array[base64ArrayIndex] = completeBase64Image;
+
+              Serial.print("Stored in slot: ");
+              Serial.println(base64ArrayIndex);
+              Serial.print("Total base64 data length (after removing markers): ");
+              Serial.println(completeBase64Image.length());
+              Serial.println("Full base64 string (truncated for display):");
+              Serial.println(completeBase64Image.substring(0, min((int)completeBase64Image.length(), 100)) + "...");  // Print a snippet
+
+            } else {
+              Serial.println("Error: Start or end block markers not found correctly in the accumulated data.");
+            }
+
+            accumulatedData = "";
+            base64DataInProgress = false;
+          } else {
+            Serial.print("Continuing accumulation. Current length: ");
+            Serial.println(accumulatedData.length());
+          }
         } else {
-          Serial.println("Received non-base64 data: ");
+          Serial.println("Received non-base64 (or unexpected) data: ");
           Serial.println(data);
         }
       }
@@ -320,7 +341,7 @@ void sssdata() {
         isLedPowerOn = respDoc["ledstatus"].as<bool>();
         digitalWrite(LED_PIN, isLedPowerOn);
       }
-      Serial.println("✅");
+      //Serial.println("✅");
     }
   }
 

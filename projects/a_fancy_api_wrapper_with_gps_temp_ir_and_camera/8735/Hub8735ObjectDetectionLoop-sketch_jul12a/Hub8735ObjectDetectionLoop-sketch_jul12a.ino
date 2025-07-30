@@ -169,7 +169,7 @@ void loop() {
   
     Serial2.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
     Serial2.print(encodingProcess);
-    Serial2.println("<!END BLOCK!>");
+    Serial2.println("</!END BLOCK!>");
 
     // --- (Optional) Uncomment and adapt this section to draw bounding boxes on the RTSP stream ---
     // Make sure the OSD coordinates are scaled correctly if results are from a different resolution NN
