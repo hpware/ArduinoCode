@@ -52,7 +52,6 @@ const bool enableGPS = true;
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
-bool isLedPowerOn = false;
 // 預設 GPS
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
@@ -306,7 +305,6 @@ void sssdata() {
   String localGpsLong = gpsLong.length() > 0 ? gpsLong : defaultlong;
   String localTime = "2025-07-12 10:15:00";  // Consider using a real-time clock for accuracy
   bool localJistatus = isJiPowerOn;
-  bool localLedStatus = isLedPowerOn;
 
   if (cwa_data.containsKey("location")) {  // Check for a valid weather data presence
     if (cwa_data["temperature"].is<float>() && cwa_data["temperature"] != -99) {
@@ -422,9 +420,13 @@ void sssdata() {
         isJiPowerOn = respDoc["jistatus"].as<bool>();
         digitalWrite(JIPOWER_PIN, isJiPowerOn);
       }
-      if (respDoc.containsKey("ledstatus")) {
-        isLedPowerOn = respDoc["ledstatus"].as<bool>();
-        digitalWrite(LED_PIN, isLedPowerOn);
+      if (respDoc.containsKey("newledstatus")) {
+        int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
+        if (H87_Serial.available()) {
+          H87_Serial.print("<!FLASHLIGHT!>");
+          H87_Serial.print(ledPowerOnPoint);
+          H87_Serial.println("</!FLASHLIGHT!>");
+        }
       }
     } else {
       Serial.print("Error parsing server response JSON: ");
