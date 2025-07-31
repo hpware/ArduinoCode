@@ -66,7 +66,8 @@ DynamicJsonDocument cwa_data(512);
 const unsigned long TEMP_INTERVAL = 60000;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
-bool pullingHub8735Data = false;  // Kept, but its usage will be refined for cross-task communication
+bool pullingHub8735Data = false;
+int currentFlashLightLevel = 0;
 // Removed bool base64DataSendDone = true; as it's replaced by base64DataInProgress
 
 // === Base64 handling variables - moved to global scope ===
@@ -422,10 +423,11 @@ void sssdata() {
       }
       if (respDoc.containsKey("newledstatus")) {
         int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
-        if (H87_Serial.available()) {
+        if (H87_Serial.available() && ledPowerOnPoint != currentFlashLightLevel) {
           H87_Serial.print("<!FLASHLIGHT!>");
           H87_Serial.print(ledPowerOnPoint);
           H87_Serial.println("</!FLASHLIGHT!>");
+          currentFlashLightLevel = ledPowerOnPoint; 
         }
       }
     } else {
