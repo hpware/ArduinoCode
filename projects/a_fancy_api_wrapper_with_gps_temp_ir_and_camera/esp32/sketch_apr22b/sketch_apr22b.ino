@@ -38,8 +38,10 @@ const char *weatherUrl1 = "https://hpg7.sch2.top/weather/v2/";     // Server 1
 const char *weatherUrl2 = "https://c5d5bb.a.srv.yhw.tw/weather/";  // Server 2
 const char *serverUrl1 = weatherUrl2;                              //　網址應該是 https://<<你的主機>>/weather/
 // 主要 Nuxt 網頁與 API 伺服器
-const char *serverHost2 = "3m4ft6.a.srv.yhw.tw";                // 主機
-const char *deviceId = "8595228a-92a6-47d2-b372-f5b4e7d74547";  // 裝置 ID
+const char *testingApiHost = "hpg7.sch2.top";
+const char *prodApiHost = "3m4ft6.a.srv.yhw.tw";
+const char *serverHost2 = testingApiHost;                       // 主機
+const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
@@ -222,24 +224,6 @@ void MainTaskC(void *pvParameters) {
           Serial.print("Continuing base64 accumulation. Current length: ");
           Serial.println(accumulatedData.length());
         }
-        // 4. If none of the above, and it looks like JSON
-        else if (data.startsWith("{") && data.endsWith("}")) {  // More generic JSON check (startsWith "{")
-          Serial.println("Received JSON weather data:");
-          Serial.println(data);
-          // Assuming this JSON is for CWA data as per your logs:
-          DynamicJsonDocument incomingJson(512);  // Use a temporary doc for incoming JSON
-          DeserializationError error = deserializeJson(incomingJson, data);
-
-          if (!error) {
-            // Safely update global cwa_data
-            cwa_data.clear();            // Clear previous CWA data
-            cwa_data.set(incomingJson);  // Copy new CWA data
-            Serial.println("CWA data updated.");
-          } else {
-            Serial.print("JSON parsing failed: ");
-            Serial.println(error.f_str());
-          }
-        }
         // 5. Anything else (unhandled/unknown data)
         else {
           Serial.println("Received unhandled data (neither base64 nor known JSON): ");
@@ -346,7 +330,6 @@ void sssdata() {
   doc["local_gps_long"] = localGpsLong;
   doc["local_time"] = "2024-03-20 15:30:00";  // Update with real time if possible
   doc["local_jistatus"] = isJiPowerOn;
-  // doc["local_detect"] = JsonArray(); // If this array is always empty, remove it to save space
 
   // Create array of base64 data
   // Only add if there are images to send
@@ -357,9 +340,8 @@ void sssdata() {
       break;
     }
   }
-
+  JsonArray testingArray = doc.createNestedArray("image");
   if (hasImagesToSend) {
-    JsonArray testingArray = doc.createNestedArray("testing");
     for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
       if (base64Array[i].length() > 0) {
         testingArray.add(base64Array[i]);
@@ -413,6 +395,7 @@ void sssdata() {
   int bodyStart = response.indexOf("\r\n\r\n") + 4;
   if (bodyStart > 4) {
     String body = response.substring(bodyStart);
+    Serial.println(body);
     DynamicJsonDocument respDoc(512);
     DeserializationError error = deserializeJson(respDoc, body);
 
@@ -424,10 +407,12 @@ void sssdata() {
       if (respDoc.containsKey("newledstatus")) {
         int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
         if (H87_Serial.available() && ledPowerOnPoint != currentFlashLightLevel) {
+          Serial.print("Flashlight active! Num: ");
+          Serial.println(ledPowerOnPoint);
           H87_Serial.print("<!FLASHLIGHT!>");
           H87_Serial.print(ledPowerOnPoint);
           H87_Serial.println("</!FLASHLIGHT!>");
-          currentFlashLightLevel = ledPowerOnPoint; 
+          currentFlashLightLevel = ledPowerOnPoint;
         }
       }
     } else {
@@ -459,13 +444,12 @@ void getWeatherData() {
   int httpResponseCode = http.GET();
   if (httpResponseCode > 0) {
     String payload = http.getString();
-    Serial.println(payload);
     DynamicJsonDocument fetchedCwaData(512);
     DeserializationError error = deserializeJson(fetchedCwaData, payload);
     if (!error) {
       cwa_data.clear();
       cwa_data.set(fetchedCwaData);
-   } else {
+    } else {
       Serial.print("Error parsing CWA HTTP GET JSON: ");
       Serial.println(error.f_str());
     }
