@@ -40,7 +40,7 @@ const char *serverUrl1 = weatherUrl2;                              //　網址�
 // 主要 Nuxt 網頁與 API 伺服器
 const char *testingApiHost = "hpg7.sch2.top";
 const char *prodApiHost = "3m4ft6.a.srv.yhw.tw";
-const char *serverHost2 = testingApiHost;                       // 主機
+const char *serverHost2 = prodApiHost;                          // 主機
 const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
@@ -84,8 +84,10 @@ int base64ArrayIndex = 0;
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
 // INIT Hardware
-HardwareSerial GPS_Serial(1);  // GPS 連接
-HardwareSerial H87_Serial(2);  // 8735 連接
+//HardwareSerial GPS_Serial(1);  // GPS 連接
+//HardwareSerial H87_Serial(2);  // 8735 連接
+#define GPS_Serial Serial1
+#define H87_Serial Serial2
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
 
@@ -395,18 +397,18 @@ void sssdata() {
   int bodyStart = response.indexOf("\r\n\r\n") + 4;
   if (bodyStart > 4) {
     String body = response.substring(bodyStart);
-    Serial.println(body);
     DynamicJsonDocument respDoc(512);
     DeserializationError error = deserializeJson(respDoc, body);
 
     if (!error) {
       if (respDoc.containsKey("jistatus")) {
         isJiPowerOn = respDoc["jistatus"].as<bool>();
+        Serial.println(isJiPowerOn);
         digitalWrite(JIPOWER_PIN, isJiPowerOn);
       }
       if (respDoc.containsKey("newledstatus")) {
         int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
-        if (H87_Serial.available() && ledPowerOnPoint != currentFlashLightLevel) {
+        if (ledPowerOnPoint != currentFlashLightLevel) {
           Serial.print("Flashlight active! Num: ");
           Serial.println(ledPowerOnPoint);
           H87_Serial.print("<!FLASHLIGHT!>");

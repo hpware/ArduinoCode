@@ -119,7 +119,6 @@ void setup() {
 }
 
 void loop() {
-  flashLight.writeMicroseconds(200 * 1);
   
   // Check if ESP32 sent a capture command
   if (Serial2.available()) {
