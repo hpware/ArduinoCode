@@ -63,6 +63,10 @@ String gpsLong = "";
 // Set Global temp & humidity
 float temp = 0;
 float hum = 0;
+float oti602AmbientTemp = 0.0;
+float oti602ObjectTemp = 0.0;
+float prevOti602JbjectTemp = NAN;
+const float tempChangeThreshold = 0.5;
 // Set global cwa data
 DynamicJsonDocument cwa_data(512);
 // Do Stuff
