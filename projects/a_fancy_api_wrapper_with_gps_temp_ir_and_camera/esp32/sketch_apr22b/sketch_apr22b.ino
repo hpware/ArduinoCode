@@ -403,14 +403,11 @@ void sssdata() {
     if (!error) {
       if (respDoc.containsKey("jistatus")) {
         isJiPowerOn = respDoc["jistatus"].as<bool>();
-        Serial.println(isJiPowerOn);
-        digitalWrite(JIPOWER_PIN, isJiPowerOn);
+        digitalWrite(JIPOWER_PIN, isJiPowerOn ? LOW : HIGH);
       }
       if (respDoc.containsKey("newledstatus")) {
         int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
         if (ledPowerOnPoint != currentFlashLightLevel) {
-          Serial.print("Flashlight active! Num: ");
-          Serial.println(ledPowerOnPoint);
           H87_Serial.print("<!FLASHLIGHT!>");
           H87_Serial.print(ledPowerOnPoint);
           H87_Serial.println("</!FLASHLIGHT!>");
