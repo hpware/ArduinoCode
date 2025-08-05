@@ -70,4 +70,22 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
       return false;
     }
   }
+  
+  // 計算環境溫度 (前3個位元組)
+  int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
+  if (data[2] >= 0x80) {
+    rawAmbient -= 0x1000000;  // 處理負溫度
+  }
+  *ambientTemp = rawAmbient / 200.0f;
+  
+  // 計算物體溫度 (後3個位元組)
+  int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
+  if (data[5] >= 0x80) {
+    rawObject -= 0x1000000;  // 處理負溫度
+  }
+  *objectTemp = rawObject / 200.0f;
+  
+  return true;
+}
+
 ```

@@ -47,6 +47,7 @@ const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
 const bool enableGPS = true;
+const bool irTempDetect = true;
 
 // 下方資料不要改!!!!
 // 資料
@@ -145,6 +146,33 @@ void MainTaskC(void *pvParameters) {
     if (tempHumInfo == true) {
       temp = dht_sensor.readTemperature();
       hum = dht_sensor.readHumidity();
+    }
+    if (irTempDetect == true) {
+      if (readOTI602Temperatures(&oti602AmbientTemp, &oti602ObjectTemp)) {
+        // DEBUG
+        Serial.println("-------------------------------");
+        Serial.print("OTI602 Sensor -> Ambient: ");
+        Serial.print(oti602AmbientTemp, 2);
+        Serial.print(" *C, Object: ");
+        Serial.print(oti602ObjectTemp, 2);
+        Serial.println(" *C");
+        if (!isnan(prevOti602JbjectTemp)) {
+          float tempDelta = abs(oti602ObjectTemp - prevOti602JbjectTemp);
+          Serial.println(tempDelta);
+          Serial.println(tempDelta > tempChangeThreshold);
+          if (tempDelta > tempChangeThreshold) {
+            H87_Serial.println("<!CAPTURE /!>");
+          }
+        }
+        prevOti602JbjectTemp = oti602ObjectTemp;
+      } else {
+        Serial.println("Failed to read from OTI602 sensor!");
+        // Optionally set temps to NaN or a specific error value
+        // 如果沒有把 OTI602 設成 NAN
+        oti602AmbientTemp = NAN;
+        oti602ObjectTemp = NAN;
+        prevOti602JbjectTemp = NAN;
+      }
     }
 
     // Read Hub 8735 serial data
@@ -458,4 +486,50 @@ void getWeatherData() {
     Serial.println(httpResponseCode);
   }
   http.end();
+}
+
+bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
+  byte data[6];
+  
+  Wire.beginTransmission(OTI602_ADDR);
+  Wire.write(0x80);
+  byte error = Wire.endTransmission();
+  
+  if (error != 0) {
+    Serial.print("發送讀取指令錯誤: ");
+    Serial.println(error);
+    return false;
+  }
+  byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
+  
+  Serial.print("接收到的數據量: ");
+  Serial.println(bytesReceived);
+  
+  if (bytesReceived != 6) {
+    return false;
+  }
+  for (int i = 0; i < 6; i++) {
+    if (Wire.available()) {
+      data[i] = Wire.read();
+      Serial.print("數據[");
+      Serial.print(i);
+      Serial.print("]: 0x");
+      Serial.println(data[i], HEX);
+    } else {
+      Serial.println("讀取數據時發生錯誤");
+      return false;
+    }
+  }
+    int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
+  if (data[2] >= 0x80) {
+    rawAmbient -= 0x1000000; 
+  }
+  *ambientTemp = rawAmbient / 200.0f;
+  
+  int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
+  if (data[5] >= 0x80) {
+    rawObject -= 0x1000000;
+  *objectTemp = rawObject / 200.0f;
+  
+  return true;
 }
