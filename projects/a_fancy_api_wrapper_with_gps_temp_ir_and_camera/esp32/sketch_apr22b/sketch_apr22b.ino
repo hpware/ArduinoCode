@@ -29,6 +29,9 @@
 #define OTI602_ADDR 0x10
 
 // 設定
+// DEBUG
+const bool debug = false;
+const bool plottingMode = true;
 // WiFi 設定
 const char *ssid = "hel";
 const char *password = "1234567890";
@@ -46,15 +49,15 @@ const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
 const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
-const bool enableGPS = true;
+const bool enableGPS = false;
 const bool irTempDetect = true;
 
 // 下方資料不要改!!!!
 // 資料
-// String data = ""; // This 'data' variable is now locally scoped in MainTaskC
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
+bool itemEntered = true;
 // 預設 GPS
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
@@ -71,14 +74,15 @@ const float tempChangeThreshold = 0.5;
 DynamicJsonDocument cwa_data(512);
 // Do Stuff
 const unsigned long TEMP_INTERVAL = 60000;
+const unsigned long captureInterval = 1000 * 2;
+unsigned long lastCaptureTime = 0;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
 bool pullingHub8735Data = false;
+bool autoCapture = false;
 int currentFlashLightLevel = 0;
-// Removed bool base64DataSendDone = true; as it's replaced by base64DataInProgress
 
-// === Base64 handling variables - moved to global scope ===
-String accumulatedData = "";  // Moved from static local to global
+String accumulatedData = "";
 bool base64DataInProgress = false;
 const int MAX_BASE64_ARRAY = 5;  // Keep last 5 images
 String base64Array[MAX_BASE64_ARRAY];
@@ -88,11 +92,11 @@ int base64ArrayIndex = 0;
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
-// INIT Hardware
-//HardwareSerial GPS_Serial(1);  // GPS 連接
-//HardwareSerial H87_Serial(2);  // 8735 連接
-#define GPS_Serial Serial1
-#define H87_Serial Serial2
+
+// Redefine Serial Connections
+#define GPS_Serial Serial1  // GPS 連接
+#define H87_Serial Serial2  // 8735 連接
+// Setup DHT11 sensor and TinyGPS
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
 
@@ -102,7 +106,9 @@ void setup() {
   Serial.begin(115200);
   GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
   H87_Serial.begin(115200, SERIAL_8N1, 26, 27);
-  Serial.println("Setup");
+  if (debug) {
+    Serial.println("Setup");
+  }
   // setup hum and temp sensor
   dht_sensor.begin();
   // init wifi
@@ -146,140 +152,159 @@ void loop() {}
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
   while (true) {
-    // Read DHT sensor
+    unsigned long currentMillis = millis();
     if (tempHumInfo == true) {
+      if (debug) {
+        Serial.println("Reading DHT sensor...");
+      }
       temp = dht_sensor.readTemperature();
       hum = dht_sensor.readHumidity();
     }
     if (irTempDetect == true) {
+      if (debug) {
+        Serial.println("Reading OTI602 sensor...");
+      }
       if (readOTI602Temperatures(&oti602AmbientTemp, &oti602ObjectTemp)) {
-        // DEBUG
-        Serial.println("-------------------------------");
-        Serial.print("OTI602 Sensor -> Ambient: ");
-        Serial.print(oti602AmbientTemp, 2);
-        Serial.print(" *C, Object: ");
-        Serial.print(oti602ObjectTemp, 2);
-        Serial.println(" *C");
+        if (debug) {
+          Serial.print("OTI602 Sensor -> Ambient: ");
+          Serial.print(oti602AmbientTemp, 2);
+          Serial.print(" *C, Object: ");
+          Serial.print(oti602ObjectTemp, 2);
+          Serial.print(" *C itemEntered: ");
+          Serial.println(itemEntered);
+        }
         if (!isnan(prevOti602JbjectTemp)) {
           float tempDelta = abs(oti602ObjectTemp - prevOti602JbjectTemp);
-          Serial.println(tempDelta);
-          Serial.println(tempDelta > tempChangeThreshold);
           if (tempDelta > tempChangeThreshold) {
-            H87_Serial.println("<!CAPTURE /!>");
+            itemEntered = true;
+          } else if (tempDelta < -tempChangeThreshold) {
+            itemEntered = false;
           }
         }
         prevOti602JbjectTemp = oti602ObjectTemp;
       } else {
         Serial.println("Failed to read from OTI602 sensor!");
-        // Optionally set temps to NaN or a specific error value
-        // 如果沒有把 OTI602 設成 NAN
         oti602AmbientTemp = NAN;
         oti602ObjectTemp = NAN;
         prevOti602JbjectTemp = NAN;
+        itemEntered = false;
+
       }
     }
 
-    // Read Hub 8735 serial data
     if (enableHub8735 == true) {
+      if (itemEntered && lastCaptureTime + captureInterval < currentMillis && autoCapture) {
+        H87_Serial.println("<!CAPTURE /!>");
+      }
       if (H87_Serial.available()) {
-        pullingHub8735Data = true;  // Flag for this task iteration
-        Serial.println("Reading HUB 8735 Data!");
+        pullingHub8735Data = true;
+        if (debug) {
+          Serial.println("Reading HUB 8735 Data!");
+        }
 
-        // Read until a newline. This assumes ALL messages (base64 chunks, JSON) are newline terminated.
         String data = H87_Serial.readStringUntil('\n');
-        data.trim();  // Important: Remove any leading/trailing whitespace, especially for JSON
+        data.trim();
 
-        // Debug prints
         Serial.print("Received data length: ");
         Serial.println(data.length());
-        Serial.print("Received data: '");  // Use quotes to see if there are extra spaces/newlines
+        Serial.print("Received data: '");
         Serial.print(data);
         Serial.println("'");
 
-        // --- Start of refined base64/JSON handling logic ---
-
-        // 1. Check for the start of a base64 block
         if (data.startsWith("<!START BLOCK!>")) {
           if (!base64DataInProgress) {
-            accumulatedData = data;       // Start accumulating this first chunk
-            base64DataInProgress = true;  // Set the flag to true
+            accumulatedData = data;
+            base64DataInProgress = true;
             Serial.println("Started accumulating base64 data.");
           } else {
-            // This is an unexpected START BLOCK while one is already in progress.
-            // It could mean a previous image was incomplete or an error.
-            // You might want to discard the old one or handle this as an error.
-            Serial.println("WARNING: Received START BLOCK while already accumulating. Discarding old data.");
-            accumulatedData = data;  // Start fresh with the new block
+            if (debug) {
+              Serial.println("WARNING: Received START BLOCK while already accumulating. Discarding old data.");
+            }
+            accumulatedData = data;
           }
-        }
-        // 2. Check for the end of a base64 block (must be in progress for this to be valid)
-        else if (data.endsWith("</!END BLOCK!>")) {
+        } else if (data.endsWith("</!END BLOCK!>")) {
           if (base64DataInProgress) {
-            accumulatedData += data;  // Append the last chunk which contains the end marker
+            accumulatedData += data;
 
-            // Now, process the complete base64 block
-            Serial.println("Complete base64 image received!");
+            if (debug) {
+              Serial.println("Complete base64 image received!");
+            }
             int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
             int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
 
             if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);  // 16 is length of "<!START BLOCK!>"
+              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
 
               base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
               base64Array[base64ArrayIndex] = completeBase64Image;
-
-              Serial.print("Stored in slot: ");
-              Serial.println(base64ArrayIndex);
-              Serial.print("Total base64 data length (after removing markers): ");
-              Serial.println(completeBase64Image.length());
-              Serial.println("Full base64 string (truncated for display):");
-              Serial.println(completeBase64Image.substring(0, min((int)completeBase64Image.length(), 100)) + "...");  // Print a snippet
-
+              if (debug) {
+                Serial.print("Stored in slot: ");
+                Serial.println(base64ArrayIndex);
+                Serial.print("Total base64 data length (after removing markers): ");
+                Serial.println(completeBase64Image.length());
+                Serial.println("Full base64 string (truncated for display):");
+                Serial.println(completeBase64Image.substring(0, min((int)completeBase64Image.length(), 100)) + "...");
+              }
             } else {
-              Serial.println("Error: Start or end block markers not found correctly in the accumulated data.");
-              // Optionally, reset state on error to prevent endless accumulation of bad data
+              if (debug) {
+                Serial.println("Error: Start or end block markers not found correctly in the accumulated data.");
+              }
               accumulatedData = "";
               base64DataInProgress = false;
             }
-
-            // Reset state after successful processing (or detected error in markers)
             accumulatedData = "";
             base64DataInProgress = false;
           } else {
-            // Received END BLOCK without a preceding START BLOCK. This is unexpected.
-            Serial.println("WARNING: Received END BLOCK without START BLOCK. Discarding.");
-            // Also discard any current accumulated data if there was any (though base64DataInProgress should be false)
+            if (debug) {
+              Serial.println("WARNING: Received END BLOCK without START BLOCK. Discarding.");
+            }
             accumulatedData = "";
           }
-        }
-        // 3. If a base64 block is in progress, accumulate intermediate data chunks
-        else if (base64DataInProgress) {
+        } else if (base64DataInProgress) {
           accumulatedData += data;
           Serial.print("Continuing base64 accumulation. Current length: ");
           Serial.println(accumulatedData.length());
+        } else {
+          if (debug) {
+            Serial.println("Received unhandled data (neither base64 nor known JSON): ");
+            Serial.println(data);
+          }
         }
-        // 5. Anything else (unhandled/unknown data)
-        else {
-          Serial.println("Received unhandled data (neither base64 nor known JSON): ");
-          Serial.println(data);
-        }
-        // --- End of refined base64/JSON handling logic ---
       }
-      delay(10);                   // Small delay to allow serial buffer to fill
-      pullingHub8735Data = false;  // Reset the flag for this task iteration
+      if (plottingMode) {
+        Serial.print("Ambient:");
+        Serial.print(oti602AmbientTemp, 2);
+        Serial.print(",");
+        Serial.print("Object:");
+        Serial.print(oti602ObjectTemp, 2);
+        Serial.print(",");
+        Serial.print("itemEntered:");
+        Serial.print(itemEntered);
+        Serial.print(",");
+        Serial.print("Temp:");
+        Serial.print(temp);
+        Serial.print(",");
+        Serial.print("Hum:");
+        Serial.print(hum);
+        Serial.println("");
+      }
+      delay(10);
+      pullingHub8735Data = false;
     }
     // Read GPS serial data
     if (enableGPS == true) {
       if (GPS_Serial.available()) {
-        // Read bytes directly into TinyGPS++
-        // Note: You might need to read all available bytes in a loop for GPS to parse effectively
         while (GPS_Serial.available()) {
           if (gps.encode(GPS_Serial.read())) {
             if (gps.location.isValid()) {
-              gpsLat = String(gps.location.lat(), 6);  // Add precision for GPS
+              gpsLat = String(gps.location.lat(), 6);
               gpsLong = String(gps.location.lng(), 6);
-              // Serial.print("GPS Lat: "); Serial.println(gpsLat);
-              // Serial.print("GPS Lng: "); Serial.println(gpsLong);
+              if (debug) {
+                Serial.print("GPS Lat: ");
+                Serial.println(gpsLat);
+                Serial.print("GPS Lng: ");
+                Serial.println(gpsLong);
+              }
             }
           }
         }
@@ -309,8 +334,6 @@ void SendTaskC(void *pvParameters) {
 
 void sssdata() {
   // 設定預設值
-  // Use .c_str() for String when accessing DynamicJsonDocument for safety if needed,
-  // but generally String comparison with const char* works ok.
   String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
   String cwaLocation = cwa_data.containsKey("location") ? cwa_data["location"].as<String>() : "臺北市士林區";
   float cwaTemp = 23.5;
@@ -446,6 +469,9 @@ void sssdata() {
           currentFlashLightLevel = ledPowerOnPoint;
         }
       }
+      if (respDoc.containsKey("autocapture")) {
+        autoCapture = respDoc["autocapture"].as<bool>();
+      }
     } else {
       Serial.print("Error parsing server response JSON: ");
       Serial.println(error.f_str());
@@ -494,46 +520,57 @@ void getWeatherData() {
 
 bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   byte data[6];
-  
   Wire.beginTransmission(OTI602_ADDR);
   Wire.write(0x80);
   byte error = Wire.endTransmission();
-  
+
   if (error != 0) {
-    Serial.print("發送讀取指令錯誤: ");
-    Serial.println(error);
+    if (debug) {
+      Serial.print("發送讀取指令錯誤: ");
+      Serial.println(error);
+    }
     return false;
   }
+
   byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
-  
-  Serial.print("接收到的數據量: ");
-  Serial.println(bytesReceived);
-  
+
+  if (debug) {
+    Serial.print("接收到的數據量: ");
+    Serial.println(bytesReceived);
+  }
+
   if (bytesReceived != 6) {
     return false;
   }
+
   for (int i = 0; i < 6; i++) {
     if (Wire.available()) {
       data[i] = Wire.read();
-      Serial.print("數據[");
-      Serial.print(i);
-      Serial.print("]: 0x");
-      Serial.println(data[i], HEX);
+      if (debug) {
+        Serial.print("數據[");
+        Serial.print(i);
+        Serial.print("]: 0x");
+        Serial.println(data[i], HEX);
+      }
     } else {
-      Serial.println("讀取數據時發生錯誤");
+      if (debug) {
+        Serial.println("讀取數據時發生錯誤");
+      }
       return false;
     }
   }
-    int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
+
+  int32_t rawAmbient = data[0] + (data[1] << 8) + (data[2] << 16);
   if (data[2] >= 0x80) {
-    rawAmbient -= 0x1000000; 
+    rawAmbient -= 0x1000000;
   }
   *ambientTemp = rawAmbient / 200.0f;
-  
+
   int32_t rawObject = data[3] + (data[4] << 8) + (data[5] << 16);
   if (data[5] >= 0x80) {
     rawObject -= 0x1000000;
+  }
   *objectTemp = rawObject / 200.0f;
-  
+
   return true;
 }
