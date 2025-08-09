@@ -16,16 +16,16 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <SoftwareSerial.h>
 
 // 設定溫濕度、繼電器與紅外線的PIN
-#define DHT_SENSOR_PIN 33
+#define DHT_SENSOR_PIN 0
 #define DHT_SENSOR_TYPE DHT11
-#define JIPOWER_PIN 25
-#define LED_PIN 32
+#define JIPOWER_PIN 1
 
 // 設定紅外線 PIN 與 地址
-#define I2C_SDA_PIN 21
-#define I2C_SCL_PIN 22
+#define I2C_SDA_PIN 8  // 21
+#define I2C_SCL_PIN 9  // 22
 #define OTI602_ADDR 0x10
 
 // 設定
@@ -47,9 +47,9 @@ const char *serverHost2 = prodApiHost;                          // 主機
 const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
-const bool tempHumInfo = false;
+const bool tempHumInfo = true;
 const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false  不然 ESP32 的 Watchdog 會一直強制 Reset 裝置
-const bool enableGPS = false;
+const bool enableGPS = true;
 const bool irTempDetect = true;
 
 // 下方資料不要改!!!!
@@ -57,7 +57,7 @@ const bool irTempDetect = true;
 String h87data = "";
 bool sendData = false;
 bool isJiPowerOn = false;
-bool itemEntered = true;
+bool itemEntered = false;
 bool imageCaptured = false;
 // 預設 GPS
 String defaultlat = "25.134393";
@@ -79,7 +79,7 @@ const unsigned long captureInterval = 1000 * 2;
 unsigned long lastCaptureTime = 0;
 unsigned long lastTempCheck = 0;
 bool initSystem = false;
-bool pullingHub8735Data = false;
+bool pullingHub8735Data = true;
 bool autoCapture = false;
 int currentFlashLightLevel = 0;
 
@@ -95,8 +95,8 @@ TaskHandle_t MainTask;
 TaskHandle_t SendTask;
 
 // Redefine Serial Connections
-#define GPS_Serial Serial1  // GPS 連接
-#define H87_Serial Serial2  // 8735 連接
+SoftwareSerial GPS_Serial(3, 10);  // GPS 連接
+HardwareSerial H87_Serial(1);      // 8735 連接
 // Setup DHT11 sensor and TinyGPS
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
@@ -105,8 +105,8 @@ TinyGPSPlus gps;
 // Setup
 void setup() {
   Serial.begin(115200);
-  GPS_Serial.begin(9600, SERIAL_8N1, 16, 17);
-  H87_Serial.begin(115200, SERIAL_8N1, 26, 27);
+  GPS_Serial.begin(9600);
+  H87_Serial.begin(115200, SERIAL_8N1, 5, 6);
   if (debug) {
     Serial.println("Setup");
   }
@@ -118,33 +118,37 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW);
   pinMode(JIPOWER_PIN, OUTPUT);
   digitalWrite(JIPOWER_PIN, LOW);
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);
   // init task
-  xTaskCreatePinnedToCore(
-    MainTaskC,   // Task function that it should be using (also don't use the same name as the task handle name, it won't work at all)
+  xTaskCreate(
+    MainTaskC,   // Task function
     "MainTask",  // Task name
-    10000,       // Stack size
-    NULL,        // param of the task
-    1,           // priority of the task
-    &MainTask,   // task hnalde to keep track
-    0            // use core 0
+    16384,       // Stack size
+    NULL,        // Parameters
+    2,           // Priority
+    &MainTask    // Task handle
   );
+
   delay(500);
-  xTaskCreatePinnedToCore(
-    SendTaskC,
-    "SendTask",
-    10000,
-    NULL,
-    1,
-    &SendTask,
-    1);
+
+  xTaskCreate(
+    SendTaskC,   // Task function
+    "SendTask",  // Task name
+    16384,       // Stack size
+    NULL,        // Parameters
+    1,           // Priority
+    &SendTask    // Task handle
+  );
+
   delay(500);
   cwa_data.clear();
+  if (debug) {
+    Serial.print("Setup running on core: ");
+    Serial.println(xPortGetCoreID());
+  }
 }
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
@@ -153,13 +157,23 @@ void loop() {}
 // use while(true) or while(1) to loop. (and not crash)
 void MainTaskC(void *pvParameters) {
   while (true) {
+    if (debug) {
+      Serial.print("MainTaskC running on core: ");
+      Serial.println(xPortGetCoreID());
+    }
     unsigned long currentMillis = millis();
     if (tempHumInfo == true) {
+      temp = dht_sensor.readTemperature();
+      vTaskDelay(pdMS_TO_TICKS(10));
+      hum = dht_sensor.readHumidity();
+      vTaskDelay(pdMS_TO_TICKS(10));
       if (debug) {
         Serial.println("Reading DHT sensor...");
+        Serial.print("Data: Temp:");
+        Serial.print(temp);
+        Serial.print(", Hum:");
+        Serial.println(hum);
       }
-      temp = dht_sensor.readTemperature();
-      hum = dht_sensor.readHumidity();
     }
     if (irTempDetect == true) {
       if (debug) {
@@ -279,6 +293,7 @@ void MainTaskC(void *pvParameters) {
             Serial.println(data);
           }
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
       }
       if (plottingMode) {
         Serial.print("Ambient:");
@@ -297,7 +312,7 @@ void MainTaskC(void *pvParameters) {
         Serial.print(hum);
         Serial.println("");
       }
-      delay(10);
+      vTaskDelay(pdMS_TO_TICKS(10));
       pullingHub8735Data = false;
     }
     // Read GPS serial data
@@ -318,18 +333,24 @@ void MainTaskC(void *pvParameters) {
           }
         }
       }
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
 void SendTaskC(void *pvParameters) {
   while (true) {
+    if (debug) {
+      Serial.print("SendTaskC running on core: ");
+      Serial.println(xPortGetCoreID());
+    }
     unsigned long currentMillis = millis();
     // Send weather request
     if (currentMillis - lastTempCheck >= TEMP_INTERVAL || initSystem == false) {
       getWeatherData();
+      vTaskDelay(pdMS_TO_TICKS(100));
       lastTempCheck = currentMillis;
     }
     if (initSystem == false) {
@@ -377,7 +398,7 @@ void sssdata() {
     if (millis() - connectStart > 5000) {  // 5 seconds timeout
       return;
     }
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
   StaticJsonDocument<8192> doc;
   doc["cwa_type"] = cwaType;
@@ -392,6 +413,7 @@ void sssdata() {
   doc["local_gps_long"] = localGpsLong;
   doc["local_time"] = "2024-03-20 15:30:00";  // No use
   doc["local_jistatus"] = isJiPowerOn;
+  vTaskDelay(pdMS_TO_TICKS(10));
 
   // Create array of base64 data
   // Only add if there are images to send
@@ -402,13 +424,13 @@ void sssdata() {
       break;
     }
   }
-  JsonArray testingArray = doc.createNestedArray("image");
+  JsonArray imageArray = doc.createNestedArray("image");
   if (hasImagesToSend) {
     for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
       if (base64Array[i].length() > 0) {
-        testingArray.add(base64Array[i]);
-        // IMPORTANT: If you want to send only once, clear the slot after adding it to JSON
-        // base64Array[i] = ""; // You can clear it here or after sending HTTP request
+        imageArray.add(base64Array[i]);
+        Serial.println(base64Array[i]);
+        base64Array[i] = "";
       }
     }
   }
@@ -463,7 +485,8 @@ void sssdata() {
     if (!error) {
       if (respDoc.containsKey("jistatus")) {
         isJiPowerOn = respDoc["jistatus"].as<bool>();
-        digitalWrite(JIPOWER_PIN, isJiPowerOn ? LOW : HIGH);
+        Serial.println(isJiPowerOn);
+        digitalWrite(JIPOWER_PIN, isJiPowerOn);
       }
       if (respDoc.containsKey("newledstatus")) {
         int ledPowerOnPoint = respDoc["newledstatus"].as<int>();
@@ -485,8 +508,12 @@ void sssdata() {
     Serial.println("Invalid HTTP response format (no body detected).");
     Serial.println(response);  // Print full response for debugging
   }
+  vTaskDelay(pdMS_TO_TICKS(10));
 
   client.stop();
+  if (debug) {
+    Serial.println("✅✅✅✅✅");
+  }
   if (hasImagesToSend) {  // Only clear if there were images to send in this packet
     for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
       base64Array[i] = "";
@@ -494,6 +521,7 @@ void sssdata() {
     base64ArrayIndex = 0;  // Reset index to start from beginning
     Serial.println("Base64 array cleared after sending.");
   }
+  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // 存取氣象局資料

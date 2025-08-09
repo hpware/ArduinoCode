@@ -1,3 +1,6 @@
 https://dl.espressif.com/dl/package_esp32_index.json
 https://mcu.holtek.com.tw/arduino/ht32/package_ht32_index.json
+https://raw.githubusercontent.com/hpware/hpware.github.io/refs/heads/main/arduino/ht32.json
 https://raw.githubusercontent.com/ideashatch/HUB-8735/main/amebapro2_arduino/Arduino_package/ideasHatch.json
+http://dl.sipeed.com/MAIX/Maixduino/package_Maixduino_k210_dl_cdn_index.json
+
