@@ -15,6 +15,8 @@
 
 #define LED_PWM 13
 
+const bool debug = true;
+
 
 // VideoSetting for H264 RTSP stream
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
@@ -44,7 +46,7 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
   Serial.println(len);
 
   if (addr == 0 || len == 0) {
-    Serial.println("Error: No valid image data provided for Base64 encoding.");
+    if (debug) { Serial.println("Error: No valid image data provided for Base64 encoding."); }
     return "";
   }
 
@@ -74,8 +76,10 @@ void setup() {
 
   // attempt to connect to Wifi network:
   while (status != WL_CONNECTED) {
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(ssid);
+    if (debug) {
+      Serial.print("Attempting to connect to WPA SSID: ");
+      Serial.println(ssid);
+    }
     status = WiFi.begin(ssid, pass);
 
     // wait 2 seconds for connection:
@@ -89,7 +93,9 @@ void setup() {
   Camera.configVideoChannel(CHANNEL, config);             // H264 stream for RTSP
   Camera.configVideoChannel(CHANNEL_STILL, configStill);  // NEW: Dedicated channel for still capture
 
-  Camera.printInfo();
+  if (debug) {
+    Camera.printInfo();
+  }
   Camera.videoInit();
 
   // Configure RTSP with corresponding video format information
@@ -111,24 +117,21 @@ void setup() {
   // Start OSD drawing on RTSP video channel
   OSD.configVideo(CHANNEL, config);
   OSD.begin();
-
-  // NEW: Start the dedicated still capture channel
-  // Depending on SDK, you might need to call channelBegin() and channelStop() around getImage()
-  // for a still capture channel if it's resource-intensive.
   Camera.channelBegin(CHANNEL_STILL);
 }
 
 void loop() {
-  
+
   // Check if ESP32 sent a capture command
   if (Serial2.available()) {
     String command = Serial2.readStringUntil('\n');
     command.trim();
-    
+
     // If the command is <CAPTURE />, trigger image capture
     if (command == "<!CAPTURE /!>") {
-      Serial.println("Capture command received from ESP32");
-      
+      if (debug) {
+        Serial.println("Capture command received from ESP32");
+      }
       // Capture a still image from the dedicated channel
       uint32_t still_img_addr = 0;
       uint32_t still_img_len = 0;
@@ -137,26 +140,27 @@ void loop() {
       Camera.getImage(CHANNEL_STILL, &still_img_addr, &still_img_len);
 
       // Pass the captured image data to the Base64 encoding function
+      if (debug) {
+        Serial.println("Capturing image!");
+      }
       const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
-      Serial.println("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
-      Serial.println(encodingProcess);
-      Serial.println("<!END BLOCK!>");
-
       Serial2.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
       Serial2.print(encodingProcess);
       Serial2.println("</!END BLOCK!>");
     } else if (command.startsWith("<!FLASHLIGHT!>") && command.endsWith("</!FLASHLIGHT!>")) {
       int duration = command.substring(14, command.length() - 15).toInt();
-      Serial.print("Flashlight command received for duration: ");
-      Serial.println(duration);
+      if (debug) {
+        Serial.print("Flashlight command received for duration: ");
+        Serial.println(duration);
+      }
       flashLight.writeMicroseconds(200 * duration);
     } else {
-      Serial.println("Unknown command received: " + command);
+      if (debug) { Serial.println("Unknown command received: " + command); }
     }
   }
-  
+
   // Continue with regular OSD updates
   OSD.createBitmap(CHANNEL);  // Create bitmap for OSD on CHANNEL 0
-  OSD.update(CHANNEL);  // Update the OSD on CHANNEL 0
+  OSD.update(CHANNEL);        // Update the OSD on CHANNEL 0
   delay(10);
 }

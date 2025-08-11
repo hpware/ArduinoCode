@@ -225,72 +225,41 @@ void MainTaskC(void *pvParameters) {
           Serial.println("Reading HUB 8735 Data!");
         }
 
-        String data = H87_Serial.readStringUntil('\n');
-        data.trim();
+        // Read all incoming data, not just a single line
+        while (H87_Serial.available()) {
+          String chunk = H87_Serial.readStringUntil('\n');
+          chunk.trim();
 
-        Serial.print("Received data length: ");
-        Serial.println(data.length());
-        Serial.print("Received data: '");
-        Serial.print(data);
-        Serial.println("'");
+          if (chunk.length() == 0) continue; // Ignore empty
 
-        if (data.startsWith("<!START BLOCK!>")) {
-          if (!base64DataInProgress) {
-            accumulatedData = data;
-            base64DataInProgress = true;
-            Serial.println("Started accumulating base64 data.");
-          } else {
+          Serial.print("Chunk length: ");
+          Serial.println(chunk.length());
+
+          accumulatedData += chunk;
+
+          // Detect full base64 block
+          int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
+          int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
+
+          if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+            String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
+
+            // Store image in circular buffer without overwriting unsent ones prematurely
+            base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+            base64Array[base64ArrayIndex] = completeBase64Image;
+            imageCaptured = true;
+
             if (debug) {
-              Serial.println("WARNING: Received START BLOCK while already accumulating. Discarding old data.");
+              Serial.printf("📷 Stored Base64 image in slot %d, length %d\n", base64ArrayIndex, completeBase64Image.length());
             }
-            accumulatedData = data;
-          }
-        } else if (data.endsWith("</!END BLOCK!>")) {
-          if (base64DataInProgress) {
-            accumulatedData += data;
 
-            if (debug) {
-              Serial.println("Complete base64 image received!");
-            }
-            int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
-            int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
-
-            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
-
-              base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-              base64Array[base64ArrayIndex] = completeBase64Image;
-              if (debug) {
-                Serial.print("Stored in slot: ");
-                Serial.println(base64ArrayIndex);
-                Serial.print("Total base64 data length (after removing markers): ");
-                Serial.println(completeBase64Image.length());
-                Serial.println("Full base64 string (truncated for display):");
-                Serial.println(completeBase64Image.substring(0, min((int)completeBase64Image.length(), 100)) + "...");
-              }
-            } else {
-              if (debug) {
-                Serial.println("Error: Start or end block markers not found correctly in the accumulated data.");
-              }
-              accumulatedData = "";
-              base64DataInProgress = false;
-            }
+            // Reset for next image
             accumulatedData = "";
             base64DataInProgress = false;
-          } else {
-            if (debug) {
-              Serial.println("WARNING: Received END BLOCK without START BLOCK. Discarding.");
-            }
-            accumulatedData = "";
-          }
-        } else if (base64DataInProgress) {
-          accumulatedData += data;
-          Serial.print("Continuing base64 accumulation. Current length: ");
-          Serial.println(accumulatedData.length());
-        } else {
-          if (debug) {
-            Serial.println("Received unhandled data (neither base64 nor known JSON): ");
-            Serial.println(data);
+          } else if (startIndex != -1 && !base64DataInProgress) {
+            // Found start marker, begin accumulation
+            base64DataInProgress = true;
+            if (debug) Serial.println("Started accumulating base64 data.");
           }
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -411,12 +380,11 @@ void sssdata() {
   doc["local_hum"] = (int)localHumFloat;
   doc["local_gps_lat"] = localGpsLat;
   doc["local_gps_long"] = localGpsLong;
-  doc["local_time"] = "2024-03-20 15:30:00";  // No use
+  doc["local_time"] = "2024-03-20 15:30:00";
   doc["local_jistatus"] = isJiPowerOn;
   vTaskDelay(pdMS_TO_TICKS(10));
 
-  // Create array of base64 data
-  // Only add if there are images to send
+  // Create array of base64 data - FIXED VERSION
   bool hasImagesToSend = false;
   for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
     if (base64Array[i].length() > 0) {
@@ -424,29 +392,29 @@ void sssdata() {
       break;
     }
   }
+  
   JsonArray imageArray = doc.createNestedArray("image");
   if (hasImagesToSend) {
     for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
       if (base64Array[i].length() > 0) {
         imageArray.add(base64Array[i]);
-        Serial.println(base64Array[i]);
-        base64Array[i] = "";
+        Serial.print("Adding image to JSON, length: ");
+        Serial.println(base64Array[i].length());
+        // DON'T clear here - wait until after successful send
       }
     }
   }
 
-
   String jsonString;
-  // Check serialization size before sending
   size_t json_size = measureJson(doc);
-  if (json_size > 1024) {  // 1024 is the size of StaticJsonDocument
-    Serial.print("WARNING: JSON document too large for StaticJsonDocument! Size: ");
+  if (json_size > 8192) {
+    Serial.print("WARNING: JSON document too large! Size: ");
     Serial.println(json_size);
-    // You might need to use DynamicJsonDocument here, or handle large payloads differently.
-    // For now, it will likely be truncated.
   }
 
   serializeJson(doc, jsonString);
+  
+  // Send the data
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
   client.println("Host: " + String(serverHost2));
   client.println("Connection: close");
@@ -456,16 +424,16 @@ void sssdata() {
   client.println();
   client.print(jsonString);
 
-  client.flush();  // Ensure all buffered data is sent over the network
+  client.flush();
 
   unsigned long timeout = millis();
   while (!client.available()) {
     if (millis() - timeout > 5000) {
       Serial.println("Response timeout");
       client.stop();
-      return;
+      return; // Don't clear array on timeout
     }
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10)); // Changed from delay to vTaskDelay
   }
 
   // Read response
@@ -475,7 +443,7 @@ void sssdata() {
     response += c;
   }
 
-  // Parse response
+  // Parse response and handle server commands
   int bodyStart = response.indexOf("\r\n\r\n") + 4;
   if (bodyStart > 4) {
     String body = response.substring(bodyStart);
@@ -500,28 +468,30 @@ void sssdata() {
       if (respDoc.containsKey("autocapture")) {
         autoCapture = respDoc["autocapture"].as<bool>();
       }
+      
+      // Only clear images after successful response
+      if (hasImagesToSend) {
+        for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
+          base64Array[i] = "";
+        }
+        base64ArrayIndex = 0;
+        Serial.println("Base64 array cleared after successful send.");
+      }
     } else {
       Serial.print("Error parsing server response JSON: ");
       Serial.println(error.f_str());
     }
   } else {
     Serial.println("Invalid HTTP response format (no body detected).");
-    Serial.println(response);  // Print full response for debugging
+    Serial.println(response);
   }
-  vTaskDelay(pdMS_TO_TICKS(10));
 
+  vTaskDelay(pdMS_TO_TICKS(10));
   client.stop();
+  
   if (debug) {
     Serial.println("✅✅✅✅✅");
   }
-  if (hasImagesToSend) {  // Only clear if there were images to send in this packet
-    for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
-      base64Array[i] = "";
-    }
-    base64ArrayIndex = 0;  // Reset index to start from beginning
-    Serial.println("Base64 array cleared after sending.");
-  }
-  vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 // 存取氣象局資料
