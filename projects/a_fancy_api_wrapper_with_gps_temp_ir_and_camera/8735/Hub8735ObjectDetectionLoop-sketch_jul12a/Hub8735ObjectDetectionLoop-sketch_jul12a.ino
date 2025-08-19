@@ -7,8 +7,6 @@
 #include "VideoStreamOverlay.h"
 #include "Base64.h"
 #include <CameraLED.h>
-#include <PubSubClient.h>
-
 
 #include <algorithm>  // Required for std::min
 
@@ -17,16 +15,9 @@
 
 #define LED_PWM 13
 
-// 設定
-char ssid[] = "hel";                                                            // SSID
-char pass[] = "1234567890";                                                     // 密碼
-const bool debug = true;                                                        // do you want debug mode?
-const char* mqttServer = "39312.20090526.xyz";                                  // Your server
-const char* clientId = "camera_client_7884a866-4ae1-4945-9fba-b2b8d2b7c5a9";    // This should be random!
-const uint16_t mqttPort = 1883;                                                 // your server's port number
-const char* clientUser = "";                                                    // This should be you account, if you don't have one, please leave it blank for anon auth.
-const char* clientPass = "";                                                    // This should be your password for the Hub 8735, if you don't have one, please leave it blank for anon auth.
-const char* mainPublishDir = "imagedata/6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // This should be imagedata/${your_camera_id}
+const bool debug = true;
+
+#define ESP_Serial Serial2
 
 // VideoSetting for H264 RTSP stream
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
@@ -35,16 +26,14 @@ VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
 // The '1' in the last parameter for VIDEO_JPEG often indicates a dedicated still capture mode.
 VideoSetting configStill(1280, 720, 1, VIDEO_JPEG, 1);  // Example: 640x480 JPEG at 1 FPS for capture
 
-int status = WL_IDLE_STATUS;
 RTSP rtsp;
 CameraLED flashLight;
 StreamIO videoStreamer(1, 1);
 
-void callback(char* topic, byte* payload, unsigned int length) {}
-
-WiFiClient wifiClient;
-PubSubClient client(mqttServer, mqttPort, callback, wifiClient);
-
+// 設定
+char ssid[] = "hel";         // SSID
+char pass[] = "1234567890";  // 密碼
+int status = WL_IDLE_STATUS;
 
 IPAddress ip;
 int rtsp_portnum;
@@ -62,7 +51,7 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
     return "";
   }
 
-  uint8_t* fbBuf = (uint8_t*)addr;
+  uint8_t *fbBuf = (uint8_t *)addr;
   size_t fbLen = len;
 
   // The base64_encode function in Base64.h often encodes 3 bytes into 4 chars.
@@ -74,7 +63,7 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
     int bytesToEncode = std::min((size_t)3, fbLen - i);
     if (bytesToEncode <= 0) break;  // Should not happen with correct loop conditions
 
-    base64_encode(chunkOutput, (char*)(fbBuf + i), bytesToEncode);
+    base64_encode(chunkOutput, (char *)(fbBuf + i), bytesToEncode);
     imgFileInBase64 += String(chunkOutput);
   }
 
@@ -84,7 +73,7 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
 
 void setup() {
   Serial.begin(115200);
-  Serial2.begin(115200);
+  ESP_Serial.begin(115200);
 
   // attempt to connect to Wifi network:
   while (status != WL_CONNECTED) {
@@ -132,32 +121,12 @@ void setup() {
   Camera.channelBegin(CHANNEL_STILL);
 }
 
-
-void reconnect() {
-  // Loop until we're reconnected
-  while (!(client.connected())) {
-    //Serial.print("\r\nAttempting MQTT connection...");
-    // Attempt to connect
-    if (client.connect(clientId)) {
-      Serial.println("Connected");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.println(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(2000);
-    }
-  }
-}
-
-
 void loop() {
 
   // Check if ESP32 sent a capture command
-  if (Serial2.available()) {
-    String command = Serial2.readStringUntil('\n');
+  if (ESP_Serial.available()) {
+    String command = ESP_Serial.readStringUntil('\n');
     command.trim();
-    client.loop();
 
     // If the command is <CAPTURE />, trigger image capture
     if (command == "<!CAPTURE /!>") {
@@ -175,31 +144,22 @@ void loop() {
       if (debug) {
         Serial.println("Capturing image!");
       }
-      if (!(client.connected())) {
-        reconnect();
-      }
-      client.loop();
-
       const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
-      client.loop();
-      Serial.println(encodingProcess);
-      client.publish(mainPublishDir, encodingProcess.c_str());
-
+      ESP_Serial.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
+      ESP_Serial.print(encodingProcess);
+      ESP_Serial.println("</!END BLOCK!>");
     } else if (command.startsWith("<!FLASHLIGHT!>") && command.endsWith("</!FLASHLIGHT!>")) {
       int duration = command.substring(14, command.length() - 15).toInt();
       if (debug) {
-        Serial.print("qFlashlight command received for duration: ");
+        Serial.print("Flashlight command received for duration: ");
         Serial.println(duration);
       }
       flashLight.writeMicroseconds(200 * duration);
     } else {
       if (debug) { Serial.println("Unknown command received: " + command); }
     }
-  } 
-  if (!(client.connected())) {
-    reconnect();
   }
-  client.loop();
+
   // Continue with regular OSD updates
   OSD.createBitmap(CHANNEL);  // Create bitmap for OSD on CHANNEL 0
   OSD.update(CHANNEL);        // Update the OSD on CHANNEL 0
