@@ -1,9 +1,9 @@
 #include <HardwareSerial.h>
 
 #define RXD2 27  // ESP32 RX 接 HUB8735 TX (15)
-#define TXD2 26  // ESP32 TX 接 HUB8735 RX (8)
+#define TXD2 5  // ESP32 TX 接 HUB8735 RX (8)
 
-HardwareSerial h87(2);
+HardwareSerial h87(1);
 
 void setup() {
   Serial.begin(115200);
