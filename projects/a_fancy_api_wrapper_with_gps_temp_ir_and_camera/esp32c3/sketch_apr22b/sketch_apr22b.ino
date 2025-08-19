@@ -3,7 +3,7 @@
  * https://randomnerdtutorials.com/esp32-dual-core-arduino-ide/
  * https://randomnerdtutorials.com/esp32-esp8266-publish-sensor-readings-to-google-sheets/
  * https://github.com/hpware/ArduinoCode/blob/main/sketch_apr7a/sketch_apr7a.ino
- * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef234dfca (Updated chat URL)
+ * https://t3.chat/chat/ba25267b-8f0b-451c-b416-b319eef234dfca
  * https://randomnerdtutorials.com/esp32-http-get-post-arduino/ <- This is for GET requests
 */
 
@@ -31,7 +31,7 @@
 // 設定
 // DEBUG
 const bool debug = false;
-const bool debug2 = true;
+const bool h87debug = true;
 const bool plottingMode = false;
 // WiFi 設定
 const char *ssid = "hel";
@@ -41,8 +41,14 @@ const char *password = "1234567890";
 const char *weatherUrl1 = "https://hpg7.sch2.top/weather/v2/";     // Server 1 (不穩定)
 const char *weatherUrl2 = "https://c5d5bb.a.srv.yhw.tw/weather/";  // Server 2 (較穩定)
 const char *serverUrl1 = weatherUrl2;                              // 網址應該是 https://<<你的主機>>/weather/
+// MQTT Server info & topic data. (this is not used btw, but in the future the system will change to a much more MQTT focused system instead of the current api. However the weather info will still be sent via the api.)
+const char *mqttHost = "66.179.242.171";                                      // your mqtt server
+const uint8_t mqttPort = 1883;                                                // your mqtt server's port
+const char *mqttUser = "";                                                    // your mqtt user account, if you don't have one, you can leave it blank.
+const char *mqttPassword = "";                                                // your mqtt user password, if you don't have an account, you can leave it blank.
+const char *publishTopic = "eco29pass/6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // eco29pass/${裝置 ID}
 // 主要 Nuxt 網頁與 API 伺服器
-const char *testingApiHost = "hpg7.sch2.top";
+const char *testingApiHost = "livenet.sch2.top";
 const char *prodApiHost = "3m4ft6.a.srv.yhw.tw";
 const char *serverHost2 = prodApiHost;                          // 主機
 const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
@@ -53,51 +59,51 @@ const bool enableHub8735 = true;  // 如 HUB8735 未開機，請設定為 false 
 const bool enableGPS = true;
 const bool irTempDetect = true;
 
-// 下方資料不要改!!!!
-// 資料
-String h87data = "";
-bool sendData = false;
+// Values (DO NOT CHANGE!)
+// Boolean data
 bool isJiPowerOn = false;
 bool itemEntered = false;
 bool imageCaptured = false;
-// 預設 GPS
+bool initSystem = false;
+bool pullingHub8735Data = true;
+bool autoCapture = false;
+bool base64DataInProgress = false;
+
+// Default data
 String defaultlat = "25.134393";
 String defaultlong = "121.469968";
+// Dynamic data.
 String gpsLat = "";
 String gpsLong = "";
-// Set Global temp & humidity
 float temp = 0;
 float hum = 0;
 float oti602AmbientTemp = 0.0;
 float oti602ObjectTemp = 0.0;
 float prevOti602JbjectTemp = NAN;
+int currentFlashLightLevel = 0;     // current flash level
+DynamicJsonDocument cwa_data(512);  // set dynamic json document for the cwa_data system which does not require that much space.
+String accumulatedData = "";
+
+// Static values
 const float tempChangeThreshold = 0.24;
-// Set global cwa data
-DynamicJsonDocument cwa_data(512);
-// Do Stuff
+// Intervals
 const unsigned long TEMP_INTERVAL = 60000;
 const unsigned long captureInterval = 1000 * 2;
+// Remember the last interval data.
 unsigned long lastCaptureTime = 0;
 unsigned long lastTempCheck = 0;
-bool initSystem = false;
-bool pullingHub8735Data = true;
-bool autoCapture = false;
-int currentFlashLightLevel = 0;
-
-String accumulatedData = "";
-bool base64DataInProgress = false;
+// Base64 Array values
 const int MAX_BASE64_ARRAY = 5;  // Keep last 5 images
 String base64Array[MAX_BASE64_ARRAY];
 int base64ArrayIndex = 0;
-// === End Base64 handling variables ===
 
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
 
 // Redefine Serial Connections
-SoftwareSerial GPS_Serial(3, 10);  // GPS 連接
-HardwareSerial H87_Serial(1);      // 8735 連接
+SoftwareSerial GPS_Serial(3, 10);  // GPS 連接 (Use software connections)
+HardwareSerial H87_Serial(1);      // 8735 連接 (Use the navtive ESP32 Hardware Serial thingy)
 // Setup DHT11 sensor and TinyGPS
 DHT dht_sensor(DHT_SENSOR_PIN, DHT_SENSOR_TYPE);
 TinyGPSPlus gps;
@@ -133,7 +139,7 @@ void setup() {
     &MainTask    // Task handle
   );
 
-  delay(500);
+  delay(10);  // This should be fine.
 
   xTaskCreate(
     SendTaskC,   // Task function
@@ -144,18 +150,13 @@ void setup() {
     &SendTask    // Task handle
   );
 
-  delay(500);
   cwa_data.clear();
-  if (debug) {
-    Serial.print("Setup running on core: ");
-    Serial.println(xPortGetCoreID());
-  }
 }
 
 // Keep loop empty. And do not use it to do anything, as it will go wrong.
 void loop() {}
 
-// use while(true) or while(1) to loop. (and not crash)
+// use while(true) or while(1) to loop. (and not crash), but you can have some stuff running from the start.
 void MainTaskC(void *pvParameters) {
   while (true) {
     if (debug) {
@@ -210,132 +211,59 @@ void MainTaskC(void *pvParameters) {
     if (enableHub8735 == true) {
       if (itemEntered) {
         if (lastCaptureTime + captureInterval < currentMillis && autoCapture) {
-          Serial.println("Taking pics!");
+          if (h87debug) Serial.println("Taking pics!");  // debug
           H87_Serial.println("<!CAPTURE /!>");
           lastCaptureTime = currentMillis;  // Update the last capture time
         } else if (!autoCapture && !imageCaptured) {
-          if (debug) {
-            Serial.println("Auto recapture is disabled.");
-          }
+          if (debug) Serial.println("Auto recapture is disabled.");  // debug
           H87_Serial.println("<!CAPTURE /!>");
           imageCaptured = true;
         }
       }
-      /*if (H87_Serial.available()) {
+      if (H87_Serial.available()) {
         pullingHub8735Data = true;
-        if (debug) {
-          Serial.println("Reading HUB 8735 Data!");
+        if (h87debug) {
+          Serial.println("H87_Serial data available");
         }
-
+        String chunk = "";
+        // compelete the action :)
         while (H87_Serial.available()) {
-          String chunk = H87_Serial.readStringUntil('\n');
-          chunk.trim();
-
-          if (chunk.length() == 0) {
-            if (debug2) Serial.println("DISCARDED (empty chunk).");
-            continue;  // Ignore empty lines
+          //process image capture
+          if (lastCaptureTime + captureInterval < currentMillis && autoCapture && itemEntered) {
+            if (h87debug) Serial.println("Taking pics!");  // debug
+            H87_Serial.println("<!CAPTURE /!>");
+            lastCaptureTime = currentMillis;  // Update the last capture time
           }
-
-
-
-          if (debug2) {
-            Serial.print("RAW CHUNK (len ");
-            Serial.print(chunk.length());
-            Serial.print(", in_progress=");
-            Serial.print(base64DataInProgress);
-            Serial.print("): [");
-            Serial.print(chunk.substring(0, min((int)chunk.length(), 80)) + (chunk.length() > 80 ? "..." : ""));  // Print only first 80 chars
-            Serial.println("]");
-          }
-
-
-          if (chunk.indexOf("<!START BLOCK!>") != -1) {
-            if (!base64DataInProgress) {
-            if (debug2) Serial.println("?you are in the first if process!");
-              base64DataInProgress = true;
-              accumulatedData = chunk;
-              if (debug) Serial.println("Started accumulating base64 data.");
-            } else {
-              if (debug) Serial.println("Warning: Unexpected START marker while already in progress. Resetting accumulation.");
-              accumulatedData = chunk;  // Reset and treat this as the new start
-            }
-            // IMPORTANT: Don't 'continue' here immediately. Let the current chunk be processed
-            // by the 'if (base64DataInProgress)' block below, as it might contain the END marker too.
-          } else {
-            if (debug2) Serial.println("yeah no worky");
-          }
-
-          // Now, if we are currently in a Base64 data block (or just entered it)
-          if (base64DataInProgress) {
-            if (debug2) Serial.println("?you are in the second if process!");
-
-            // Append chunk if it wasn't the *initial* START marker chunk (already handled `accumulatedData = chunk;`)
-            // This is implicitly handled now that we don't have an early 'continue'.
-            // The `accumulatedData` already holds the current chunk if it contained a START marker.
-            // For subsequent chunks in the block, `accumulatedData` will grow.
-
-            int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
-            int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
-
-            if (debug2) Serial.println(startIndex != -1 && endIndex != -1 && endIndex > startIndex);
-            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-              // Found both markers and END is after START
-              String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
-
-              // Validate the extracted string (optional but recommended)
-              if (completeBase64Image.startsWith("data:image/jpeg;base64,") || completeBase64Image.startsWith("/9j/")) {
-                base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-                base64Array[base64ArrayIndex] = completeBase64Image;
-                imageCaptured = true;  // Mark that an image is ready for sending
-
-                if (debug) {
-                  Serial.printf("📷 Stored Base64 image in slot %d, length %d\n", base64ArrayIndex, completeBase64Image.length());
-                }
-                if (debug2) {  // This `debug2` block WILL activate if a complete image is stored
-                  Serial.println("------------------------------------------------");
-                  Serial.print("Stored in base64Array[");
-                  Serial.print(base64ArrayIndex);
-                  Serial.println("]:");
-                  Serial.println(base64Array[base64ArrayIndex].substring(0, min((int)base64Array[base64ArrayIndex].length(), 100)) + "...");  // Print only first 100 chars
-                }
-              } else {
-                if (debug) Serial.println("Warning: Extracted string did not look like valid Base64 image. Discarding.");
-              }
-
-              // IMPORTANT: Handle any residual data *after* the END marker in the same chunk.
-              // If the END marker is at the very end of the chunk, this will be empty.
-              // If there's garbage after the END marker, this captures it for the next loop to discard.
-              String residualData = accumulatedData.substring(endIndex + 14);  // +14 for </!END BLOCK!> length
-              if (debug2 && residualData.length() > 0) {
-                Serial.print("RESIDUAL DATA AFTER END MARKER: [");
-                Serial.print(residualData);
-                Serial.println("]");
-              }
-
-              // Reset for next image
-              accumulatedData = residualData;  // Keep residual data for next round, it might be the start of next garbage/message
-              base64DataInProgress = false;
-
-            } else {
-              // Still accumulating inside a block, no END marker yet or markers are malformed.
-              if (debug2) {
-                Serial.print("Still accumulating (IN_BASE64_BLOCK), total accumulated: ");
-                Serial.println(accumulatedData.length());
-              }
-            }
-          } else {
-            // We are NOT in a Base64 block and this chunk is NOT a START marker.
-            // This chunk is therefore pure garbage and should be discarded.
-            if (debug2) {
-              Serial.print("DISCARDED (not in block, not a marker): [");
-              Serial.print(chunk.substring(0, min((int)chunk.length(), 80)) + (chunk.length() > 80 ? "..." : ""));  // Print only first 80 chars
-              Serial.println("]");
-            }
-            accumulatedData = "";  // Keep accumulatedData clean if not in a block.
-          }
+          // main info
+          chunk += H87_Serial.readStringUntil('\n');  // yeah changing the readStringUntil thingy does not work well.
+          // this is such an easy fix, i'm dumb
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
-      }*/
+        chunk.trim();
+        // check statements
+        if (h87debug) {
+          Serial.println(chunk);  // so most of the time the chucks just sends everything in one go? nothing more, ouch.
+          // Yeah, I love debugging (no)
+          Serial.print("Does it start correctly? ");
+          Serial.println(chunk.startsWith("<!START BLOCK!>"));
+
+          Serial.print("Does it end correctly? ");
+          Serial.println(chunk.endsWith("</!END BLOCK!>"));
+          Serial.print("Does it end with !>? ");
+          Serial.println(chunk.endsWith("!>"));
+          Serial.print("This ends with: ");
+          // print the last 10 chars
+          for (int i = 20; i >= 0; i--) {
+            Serial.print(chunk[chunk.length() - i]);
+          }
+          Serial.println();
+          Serial.print("Will the chunk.startsWith(\"<!START BLOCK!>\") && chunk.endsWith(\"</!END BLOCK!> \") run? ");
+          Serial.println(chunk.startsWith("<!START BLOCK!>") && chunk.endsWith("</!END BLOCK!>"));
+          Serial.println("------------------");
+        }
+        if (chunk.startsWith("<!START BLOCK!>") && chunk.endsWith("</!END BLOCK!>")) {
+          processFile(chunk);
+        }
+      }
       vTaskDelay(pdMS_TO_TICKS(10));
       pullingHub8735Data = false;
     }
@@ -600,7 +528,7 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
 
   if (error != 0) {
     if (debug) {
-      Serial.print("發送讀取指令錯誤: ");
+      Serial.print("OTI602 Error!!: ");
       Serial.println(error);
     }
     return false;
@@ -609,7 +537,7 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   byte bytesReceived = Wire.requestFrom(OTI602_ADDR, 6);
 
   if (debug) {
-    Serial.print("接收到的數據量: ");
+    Serial.print("Data Received from OTI602: ");
     Serial.println(bytesReceived);
   }
 
@@ -647,4 +575,22 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   *objectTemp = rawObject / 200.0f;
 
   return true;
+}
+
+void processFile(const String &chunkText) {
+  int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
+  int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
+  if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+    // Found both markers and END is after START
+    String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
+
+    // Validate the extracted string (optional but recommended)
+    base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+    base64Array[base64ArrayIndex] = completeBase64Image;
+    imageCaptured = true;  // Mark that an image is ready for sending
+
+    if (debug) {
+      Serial.printf("📷 Stored Base64 image in slot %d, length %d\n", base64ArrayIndex, completeBase64Image.length());
+    }
+  }
 }

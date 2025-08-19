@@ -15,9 +15,7 @@
 
 #define LED_PWM 13
 
-const bool debug = true;
-
-#define ESP_Serial Serial2
+const bool debug = true;  // debugging use only!!
 
 // VideoSetting for H264 RTSP stream
 VideoSetting config(VIDEO_FHD, 30, VIDEO_H264, 0);
@@ -73,7 +71,7 @@ String EncodeBase64ImageFile(uint32_t addr, uint32_t len) {
 
 void setup() {
   Serial.begin(115200);
-  ESP_Serial.begin(115200);
+  Serial2.begin(115200);
 
   // attempt to connect to Wifi network:
   while (status != WL_CONNECTED) {
@@ -124,8 +122,8 @@ void setup() {
 void loop() {
 
   // Check if ESP32 sent a capture command
-  if (ESP_Serial.available()) {
-    String command = ESP_Serial.readStringUntil('\n');
+  if (Serial2.available()) {
+    String command = Serial2.readStringUntil('\n');
     command.trim();
 
     // If the command is <CAPTURE />, trigger image capture
@@ -145,9 +143,9 @@ void loop() {
         Serial.println("Capturing image!");
       }
       const String encodingProcess = EncodeBase64ImageFile(still_img_addr, still_img_len);
-      ESP_Serial.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
-      ESP_Serial.print(encodingProcess);
-      ESP_Serial.println("</!END BLOCK!>");
+      Serial2.print("<!START BLOCK!>");  // Start block for base64 data in case of esp32 just cutting off half of the base64 data.
+      Serial2.print(encodingProcess);
+      Serial2.println("</!END BLOCK!>");
     } else if (command.startsWith("<!FLASHLIGHT!>") && command.endsWith("</!FLASHLIGHT!>")) {
       int duration = command.substring(14, command.length() - 15).toInt();
       if (debug) {
