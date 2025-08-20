@@ -113,9 +113,6 @@ void setup() {
   }
   Camera.channelBegin(CHANNEL);  // Start H264 data stream
 
-  // Start OSD drawing on RTSP video channel
-  OSD.configVideo(CHANNEL, config);
-  OSD.begin();
   Camera.channelBegin(CHANNEL_STILL);
 }
 
@@ -157,9 +154,7 @@ void loop() {
       if (debug) { Serial.println("Unknown command received: " + command); }
     }
   }
-
-  // Continue with regular OSD updates
-  OSD.createBitmap(CHANNEL);  // Create bitmap for OSD on CHANNEL 0
-  OSD.update(CHANNEL);        // Update the OSD on CHANNEL 0
-  delay(10);
+  //delay(10);
+  Serial.println("I'm slow");
+  delay(200000); // testing only 
 }

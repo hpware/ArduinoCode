@@ -32,6 +32,7 @@
 // DEBUG
 const bool debug = false;
 const bool h87debug = true;
+const bool sendingFunctionDebug = true;
 const bool plottingMode = false;
 // WiFi 設定
 const char *ssid = "hel";
@@ -48,9 +49,9 @@ const char *mqttUser = "";                                                    //
 const char *mqttPassword = "";                                                // your mqtt user password, if you don't have an account, you can leave it blank.
 const char *publishTopic = "eco29pass/6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // eco29pass/${裝置 ID}
 // 主要 Nuxt 網頁與 API 伺服器
-const char *testingApiHost = "livenet.sch2.top";
+const char *testingApiHost = "hpg7.sch2.top";
 const char *prodApiHost = "3m4ft6.a.srv.yhw.tw";
-const char *serverHost2 = prodApiHost;                          // 主機
+const char *serverHost2 = testingApiHost;                       // 主機
 const char *deviceId = "6e92ff0d-adbe-43d8-b228-e4bc6f948506";  // 裝置 ID
 
 // 開啟接收資料 (如果全關 WatchDog 會一直強制 Reset 裝置)
@@ -235,11 +236,13 @@ void MainTaskC(void *pvParameters) {
             lastCaptureTime = currentMillis;  // Update the last capture time
           }
           // main info
-          chunk += H87_Serial.readStringUntil('\n');  // yeah changing the readStringUntil thingy does not work well.
-          // this is such an easy fix, i'm dumb
+          chunk = H87_Serial.readStringUntil('\n');  // yeah changing the readStringUntil thingy does not work well.
         }
+        // this is such an easy fix, i'm dumb
+        chunk.replace("\n", "");
+        chunk.replace("\r", "");
         chunk.trim();
-        // check statements
+
         if (h87debug) {
           Serial.println(chunk);  // so most of the time the chucks just sends everything in one go? nothing more, ouch.
           // Yeah, I love debugging (no)
@@ -261,7 +264,25 @@ void MainTaskC(void *pvParameters) {
           Serial.println("------------------");
         }
         if (chunk.startsWith("<!START BLOCK!>") && chunk.endsWith("</!END BLOCK!>")) {
-          processFile(chunk);
+          int startIndex = chunk.indexOf("<!START BLOCK!>");
+          int endIndex = chunk.indexOf("</!END BLOCK!>");
+          // print the last 10 chars
+          for (int i = 20; i >= 0; i--) {
+            Serial.print(chunk[chunk.length() - i]);
+          }
+          Serial.println();
+          if (h87debug) Serial.println(startIndex != -1 && endIndex != -1 && endIndex > startIndex);
+          if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+            // Found both markers and END is after START
+            String completeBase64Image = chunk.substring(startIndex + 16, endIndex);
+
+            // Validate the extracted string (optional but recommended)
+            base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
+            base64Array[base64ArrayIndex] = completeBase64Image;
+            imageCaptured = true;  // Mark that an image is ready for sending
+
+            if (h87debug) Serial.printf("Stored Base64 image in slot %d, length %d\n", base64ArrayIndex, completeBase64Image.length());
+          }
         }
       }
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -412,6 +433,10 @@ void sssdata() {
   }
 
   serializeJson(doc, jsonString);
+  if (sendingFunctionDebug) {
+    Serial.println("Json Data: ");
+    Serial.println(jsonString);
+  }
 
   // Send the data
   client.println("POST /api/device_store/" + String(deviceId) + " HTTP/1.1");
@@ -427,12 +452,15 @@ void sssdata() {
 
   unsigned long timeout = millis();
   while (!client.available()) {
-    if (millis() - timeout > 5000) {
+/**    if (millis() - timeout > 30000) {
       Serial.println("Response timeout");
       client.stop();
       return;  // Don't clear array on timeout
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));  // Changed from delay to vTaskDelay
+    }*/
+  }
+  if (sendingFunctionDebug) {
+    Serial.print("Timeout: ");
+    Serial.println(millis() - timeout);
   }
 
   // Read response
@@ -474,23 +502,25 @@ void sssdata() {
           base64Array[i] = "";
         }
         base64ArrayIndex = 0;
-        Serial.println("Base64 array cleared after successful send.");
+        if (sendingFunctionDebug) Serial.println("Base64 array cleared after successful send.");
       }
     } else {
-      Serial.print("Error parsing server response JSON: ");
-      Serial.println(error.f_str());
+      if (sendingFunctionDebug) {
+        Serial.print("Error parsing server response JSON: ");
+        Serial.println(error.f_str());
+      }
     }
   } else {
-    Serial.println("Invalid HTTP response format (no body detected).");
-    Serial.println(response);
+    if (sendingFunctionDebug) {
+      Serial.println("Invalid HTTP response format (no body detected).");
+      Serial.println(response);
+    }
   }
 
   vTaskDelay(pdMS_TO_TICKS(10));
   client.stop();
 
-  if (debug) {
-    Serial.println("✅✅✅✅✅");
-  }
+  if (sendingFunctionDebug) Serial.println("✅✅✅✅✅");
 }
 
 // 存取氣象局資料
@@ -575,22 +605,4 @@ bool readOTI602Temperatures(float *ambientTemp, float *objectTemp) {
   *objectTemp = rawObject / 200.0f;
 
   return true;
-}
-
-void processFile(const String &chunkText) {
-  int startIndex = accumulatedData.indexOf("<!START BLOCK!>");
-  int endIndex = accumulatedData.indexOf("</!END BLOCK!>");
-  if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
-    // Found both markers and END is after START
-    String completeBase64Image = accumulatedData.substring(startIndex + 16, endIndex);
-
-    // Validate the extracted string (optional but recommended)
-    base64ArrayIndex = (base64ArrayIndex + 1) % MAX_BASE64_ARRAY;
-    base64Array[base64ArrayIndex] = completeBase64Image;
-    imageCaptured = true;  // Mark that an image is ready for sending
-
-    if (debug) {
-      Serial.printf("📷 Stored Base64 image in slot %d, length %d\n", base64ArrayIndex, completeBase64Image.length());
-    }
-  }
 }
