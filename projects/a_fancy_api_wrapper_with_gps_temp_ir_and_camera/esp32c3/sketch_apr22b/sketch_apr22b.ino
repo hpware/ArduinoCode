@@ -101,6 +101,7 @@ int base64ArrayIndex = 0;
 // TaskHandle
 TaskHandle_t MainTask;
 TaskHandle_t SendTask;
+TaskHandle_t SendImageTask;
 
 // Redefine Serial Connections
 SoftwareSerial GPS_Serial(3, 10);  // GPS 連接 (Use software connections)
@@ -139,9 +140,6 @@ void setup() {
     2,           // Priority
     &MainTask    // Task handle
   );
-
-  delay(10);  // This should be fine.
-
   xTaskCreate(
     SendTaskC,   // Task function
     "SendTask",  // Task name
@@ -149,6 +147,14 @@ void setup() {
     NULL,        // Parameters
     1,           // Priority
     &SendTask    // Task handle
+  );
+  xTaskCreate(
+    SendImageTaskC,   // Task function
+    "SendImageTask",  // Task name
+    16384,       // Stack size
+    NULL,        // Parameters
+    1,           // Priority
+    &SendImageTask    // Task handle
   );
 
   cwa_data.clear();
@@ -266,12 +272,6 @@ void MainTaskC(void *pvParameters) {
         if (chunk.startsWith("<!START BLOCK!>") && chunk.endsWith("</!END BLOCK!>")) {
           int startIndex = chunk.indexOf("<!START BLOCK!>");
           int endIndex = chunk.indexOf("</!END BLOCK!>");
-          // print the last 10 chars
-          for (int i = 20; i >= 0; i--) {
-            Serial.print(chunk[chunk.length() - i]);
-          }
-          Serial.println();
-          if (h87debug) Serial.println(startIndex != -1 && endIndex != -1 && endIndex > startIndex);
           if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
             // Found both markers and END is after START
             String completeBase64Image = chunk.substring(startIndex + 16, endIndex);
@@ -351,6 +351,21 @@ void SendTaskC(void *pvParameters) {
   }
 }
 
+void SendImageTaskC(void *pvParameters) {
+  while (true) {
+    if (debug) {
+      Serial.print("SendImageTaskC running on core: ");
+      Serial.println(xPortGetCoreID());
+    }
+    // Check if there is an image to send
+    if (imageCaptured && !pullingHub8735Data) {
+      if (debug) Serial.println("Sending image data...");
+      Serial.println("Sending Image Data");
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
 void sssdata() {
   // 設定預設值
   String cwaType = cwa_data.containsKey("weather") ? cwa_data["weather"].as<String>() : "陰有雨";
@@ -403,27 +418,7 @@ void sssdata() {
   doc["local_time"] = "2024-03-20 15:30:00";
   doc["local_jistatus"] = isJiPowerOn;
   vTaskDelay(pdMS_TO_TICKS(10));
-
-  // Create array of base64 data - FIXED VERSION
-  bool hasImagesToSend = false;
-  for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
-    if (base64Array[i].length() > 0) {
-      hasImagesToSend = true;
-      break;
-    }
-  }
-
   JsonArray imageArray = doc.createNestedArray("image");
-  if (hasImagesToSend) {
-    for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
-      if (base64Array[i].length() > 0) {
-        imageArray.add(base64Array[i]);
-        Serial.print("Adding image to JSON, length: ");
-        Serial.println(base64Array[i].length());
-        // DON'T clear here - wait until after successful send
-      }
-    }
-  }
 
   String jsonString;
   size_t json_size = measureJson(doc);
@@ -447,16 +442,15 @@ void sssdata() {
   client.println(jsonString.length());
   client.println();
   client.print(jsonString);
-
   client.flush();
 
   unsigned long timeout = millis();
   while (!client.available()) {
-/**    if (millis() - timeout > 30000) {
+    if (millis() - timeout > 5000) {
       Serial.println("Response timeout");
       client.stop();
       return;  // Don't clear array on timeout
-    }*/
+    }
   }
   if (sendingFunctionDebug) {
     Serial.print("Timeout: ");
@@ -494,15 +488,6 @@ void sssdata() {
       }
       if (respDoc.containsKey("autocapture")) {
         autoCapture = respDoc["autocapture"].as<bool>();
-      }
-
-      // Only clear images after successful response
-      if (hasImagesToSend) {
-        for (int i = 0; i < MAX_BASE64_ARRAY; i++) {
-          base64Array[i] = "";
-        }
-        base64ArrayIndex = 0;
-        if (sendingFunctionDebug) Serial.println("Base64 array cleared after successful send.");
       }
     } else {
       if (sendingFunctionDebug) {

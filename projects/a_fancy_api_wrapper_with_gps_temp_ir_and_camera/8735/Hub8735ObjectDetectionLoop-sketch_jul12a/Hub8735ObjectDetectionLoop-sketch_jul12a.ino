@@ -154,7 +154,4 @@ void loop() {
       if (debug) { Serial.println("Unknown command received: " + command); }
     }
   }
-  //delay(10);
-  Serial.println("I'm slow");
-  delay(200000); // testing only 
 }
